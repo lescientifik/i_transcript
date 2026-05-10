@@ -1321,7 +1321,9 @@ async function transcribeOpenRouter(model, blob, lang) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${state.apiKeys.openrouter}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://lescientifik.github.io/i_transcript/',
+      'X-OpenRouter-Title': 'i_transcript'
     },
     body: JSON.stringify(body)
   });
@@ -1351,7 +1353,9 @@ async function transcribeOpenRouterChat(model, blob, lang, prompt) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${state.apiKeys.openrouter}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://lescientifik.github.io/i_transcript/',
+      'X-OpenRouter-Title': 'i_transcript'
     },
     body: JSON.stringify(body)
   });
