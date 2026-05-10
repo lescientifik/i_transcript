@@ -591,6 +591,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
     </div>
 
     <div class="drawer-section">
+      <h3>Silence trimming (Silero VAD)</h3>
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+        <input type="checkbox" id="vad-enabled">
+        <span>Trim silences (start, middle, end) before sending</span>
+      </label>
+      <p class="help">
+        Runs a small Silero VAD model locally in your browser to remove silent passages from the audio.
+        Reduces Whisper hallucinations and saves API cost. Adds ~200–400ms of processing per recording
+        (after first use; the model is cached).
+      </p>
+    </div>
+
+    <div class="drawer-section">
       <h3>Mono-model flow</h3>
       <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
         <input type="checkbox" id="auto-run-copy">
@@ -640,6 +653,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
 </aside>
 
 <div class="toast" id="toast"></div>
+
+<!-- Silero VAD via @ricky0123/vad-web. Bundles its own ORT JS; we only need to
+     point ORT's wasm files at the matching CDN version. The .onnx model is
+     auto-fetched from this script's directory (jsdelivr). -->
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js"></script>
 
 <script>
 'use strict';
@@ -786,6 +804,7 @@ const DEFAULT_STATE = {
   lang: 'fr',
   defaultPrompt: 'Transcris cet audio mot à mot. Réponds uniquement avec la transcription, sans aucun commentaire.',
   autoRunCopy: false,
+  vadEnabled: false,
   shortcuts: {
     record: 'F',
     send: 'Enter',
@@ -844,6 +863,7 @@ const dom = {
   modelList: $('model-list'),
   defaultPrompt: $('default-prompt'),
   autoRunCopy: $('auto-run-copy'),
+  vadEnabled: $('vad-enabled'),
   scRecord: $('sc-record'),
   scSend: $('sc-send'),
   scCopy: $('sc-copy'),
@@ -865,6 +885,8 @@ let isRecording = false;
 // Successful entries also gate the Send button (no re-charging on unchanged audio).
 let currentAudioId = null;
 const cachedResults = {}; // modelId -> { audioId, text?, costUsd?, durationSec?, error? }
+// Original (pre-VAD) duration so we can show "X → Y" savings in the UI.
+let originalDurationSec = 0;
 
 async function startRecording() {
   if (isRecording) return;
@@ -887,12 +909,28 @@ async function startRecording() {
 
   mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
   mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = () => {
+  mediaRecorder.onstop = async () => {
     recordedDurationSec = (Date.now() - recStartedAt) / 1000;
     recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
     stream.getTracks().forEach(t => t.stop());
     isRecording = false;
     currentAudioId = Date.now(); // invalidates cached results from prior audio
+    originalDurationSec = recordedDurationSec;
+
+    if (state.vadEnabled) {
+      dom.recStatus.innerHTML = '<span class="live">⏳ trimming silence…</span>';
+      dom.sendBtn.disabled = true;
+      try {
+        const { blob, originalSec, trimmedSec } = await trimWithVAD(recordedBlob);
+        recordedBlob = blob;
+        originalDurationSec = originalSec;
+        recordedDurationSec = trimmedSec;
+      } catch (err) {
+        console.warn('VAD trim failed, using original audio', err);
+        showToast('VAD trim failed: ' + err.message, 'error');
+      }
+    }
+
     updateRecorderUI();
     refreshCostStrip();
     renderResultsLayout(); // clear stale result cards from previous audio
@@ -945,7 +983,14 @@ function updateRecorderUI() {
     dom.recBtn.classList.remove('recording');
     dom.recBtnLabel.textContent = 'REC';
     if (recordedBlob) {
-      dom.recStatus.innerHTML = `ready · ${recordedDurationSec.toFixed(1)}s · ${(recordedBlob.size / 1024).toFixed(1)} KB`;
+      const sizeKB = (recordedBlob.size / 1024).toFixed(1);
+      const trimmed = state.vadEnabled
+        && originalDurationSec > 0
+        && Math.abs(originalDurationSec - recordedDurationSec) > 0.05;
+      const durLabel = trimmed
+        ? `${originalDurationSec.toFixed(1)}s → <b>${recordedDurationSec.toFixed(1)}s</b> (−${(100 * (1 - recordedDurationSec / originalDurationSec)).toFixed(0)}%)`
+        : `${recordedDurationSec.toFixed(1)}s`;
+      dom.recStatus.innerHTML = `ready · ${durLabel} · ${sizeKB} KB`;
       dom.timer.textContent = formatTimer(recordedDurationSec * 1000);
       dom.sendBtn.disabled = getModelsToRun().length === 0;
     } else {
@@ -1147,6 +1192,114 @@ async function blobToWav(srcBlob, targetSampleRate = 16000) {
   const wavBlob = new Blob([buffer], { type: 'audio/wav' });
   _wavCache = { srcBlob, wavBlob };
   return wavBlob;
+}
+
+/* ============================================================ *
+ * VAD SILENCE TRIMMING (Silero VAD via @ricky0123/vad-web)
+ * Loads a ~1.8MB ONNX model lazily, decodes the recorded blob to
+ * 16 kHz mono PCM, runs VAD to extract speech segments, and stitches
+ * them back into a compact WAV. Reduces Whisper hallucinations and
+ * trims API cost when the user pauses mid-recording.
+ * ============================================================ */
+const ORT_VERSION = '1.22.0'; // must match the ORT version bundled in vad-web@0.0.29
+let _vadInstance = null;
+let _vadLoadingPromise = null;
+
+async function getVad() {
+  if (_vadInstance) return _vadInstance;
+  if (_vadLoadingPromise) return _vadLoadingPromise;
+  if (!window.vad) throw new Error('VAD library not loaded (network or adblock?)');
+  _vadLoadingPromise = window.vad.NonRealTimeVAD.new({
+    ortConfig: (ort) => {
+      ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+      ort.env.wasm.numThreads = 1; // GH Pages can't enable cross-origin isolation; threading is moot anyway
+    },
+    // Tuned to remove substantial mid-pauses while preserving natural speech.
+    positiveSpeechThreshold: 0.5,
+    negativeSpeechThreshold: 0.35,
+    preSpeechPadMs: 200,
+    redemptionMs: 500,
+    minSpeechMs: 250,
+  }).then(v => { _vadInstance = v; return v; });
+  return _vadLoadingPromise;
+}
+
+// Decode the recorded blob to 16kHz mono Float32 PCM.
+async function decodeTo16kMono(srcBlob) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  let decoded;
+  try {
+    decoded = await ac.decodeAudioData((await srcBlob.arrayBuffer()).slice(0));
+  } finally {
+    ac.close();
+  }
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start(0);
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+
+function float32ToWavBlob(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const ws = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  ws(8, 'WAVE'); ws(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ws(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+// Returns { blob, originalSec, trimmedSec, trimmed }. Falls back to original if no speech.
+async function trimWithVAD(srcBlob) {
+  const samples = await decodeTo16kMono(srcBlob);
+  const originalSec = samples.length / 16000;
+
+  const v = await getVad();
+  const segments = [];
+  for await (const seg of v.run(samples, 16000)) segments.push(seg.audio);
+
+  if (segments.length === 0) {
+    return { blob: srcBlob, originalSec, trimmedSec: originalSec, trimmed: false };
+  }
+
+  // 100ms zero-pad between segments to avoid abrupt boundary clicks.
+  const padSamples = Math.round(0.1 * 16000);
+  let totalLen = 0;
+  for (let i = 0; i < segments.length; i++) {
+    totalLen += segments[i].length + (i < segments.length - 1 ? padSamples : 0);
+  }
+  const merged = new Float32Array(totalLen);
+  let offset = 0;
+  for (let i = 0; i < segments.length; i++) {
+    merged.set(segments[i], offset);
+    offset += segments[i].length;
+    if (i < segments.length - 1) offset += padSamples; // gap is left as zeros
+  }
+  return {
+    blob: float32ToWavBlob(merged, 16000),
+    originalSec,
+    trimmedSec: merged.length / 16000,
+    trimmed: true,
+  };
 }
 
 /* OpenRouter STT dedicated endpoint
@@ -1428,6 +1581,7 @@ function openDrawer() {
   dom.keyMistral.value = state.apiKeys.mistral;
   dom.defaultPrompt.value = state.defaultPrompt;
   dom.autoRunCopy.checked = !!state.autoRunCopy;
+  dom.vadEnabled.checked = !!state.vadEnabled;
   dom.scRecord.value = state.shortcuts.record;
   dom.scSend.value = state.shortcuts.send;
   dom.scCopy.value = state.shortcuts.copy;
@@ -1635,6 +1789,12 @@ dom.defaultPrompt.addEventListener('input', (e) => {
 dom.autoRunCopy.addEventListener('change', (e) => {
   state.autoRunCopy = e.target.checked;
   saveState();
+});
+dom.vadEnabled.addEventListener('change', (e) => {
+  state.vadEnabled = e.target.checked;
+  saveState();
+  // Warm up the model in the background so the first real use is instant.
+  if (state.vadEnabled) getVad().catch(err => console.warn('VAD preload failed', err));
 });
 dom.langSelect.addEventListener('change', (e) => { state.lang = e.target.value; saveState(); });
 
