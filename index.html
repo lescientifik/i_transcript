@@ -591,6 +591,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
     </div>
 
     <div class="drawer-section">
+      <h3>Mono-model flow</h3>
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+        <input type="checkbox" id="auto-run-copy">
+        <span>Auto-transcribe and copy when recording stops</span>
+      </label>
+      <p class="help">
+        Only applies when exactly one model is selected. Skips Send and copies the result to clipboard automatically.
+      </p>
+    </div>
+
+    <div class="drawer-section">
       <h3>Keyboard shortcuts</h3>
       <div class="shortcut-row">
         <label>
@@ -774,6 +785,7 @@ const DEFAULT_STATE = {
   selectedModelIds: ['openai/whisper-large-v3-turbo'],
   lang: 'fr',
   defaultPrompt: 'Transcris cet audio mot à mot. Réponds uniquement avec la transcription, sans aucun commentaire.',
+  autoRunCopy: false,
   shortcuts: {
     record: 'F',
     send: 'Enter',
@@ -831,6 +843,7 @@ const dom = {
   keyMistral: $('key-mistral'),
   modelList: $('model-list'),
   defaultPrompt: $('default-prompt'),
+  autoRunCopy: $('auto-run-copy'),
   scRecord: $('sc-record'),
   scSend: $('sc-send'),
   scCopy: $('sc-copy'),
@@ -883,6 +896,10 @@ async function startRecording() {
     updateRecorderUI();
     refreshCostStrip();
     renderResultsLayout(); // clear stale result cards from previous audio
+    // Auto-flow (mono mode): kick off transcription right away
+    if (state.autoRunCopy && state.selectedModelIds.length === 1 && getModelsToRun().length > 0) {
+      runTranscriptions();
+    }
   };
   mediaRecorder.start();
   recStartedAt = Date.now();
@@ -1331,8 +1348,13 @@ function setCardResult(modelId, text, costUsd, durationSec) {
   body.textContent = text;
   const slot = card.querySelector('[data-cost-slot]');
   slot.innerHTML = `<b>${fmtCost(costUsd)}</b><span class="duration">${durationSec.toFixed(1)}s audio</span>`;
-  card.querySelector('[data-copy-btn]').disabled = !text;
+  const copyBtn = card.querySelector('[data-copy-btn]');
+  copyBtn.disabled = !text;
   updateRecorderUI(); // refresh Send button (may now be disabled)
+  // Auto-copy in mono mode when the option is on
+  if (state.autoRunCopy && state.selectedModelIds.length === 1 && text) {
+    copyToClipboard(text, copyBtn);
+  }
 }
 
 function setCardError(modelId, message) {
@@ -1405,6 +1427,7 @@ function openDrawer() {
   dom.keyOR.value = state.apiKeys.openrouter;
   dom.keyMistral.value = state.apiKeys.mistral;
   dom.defaultPrompt.value = state.defaultPrompt;
+  dom.autoRunCopy.checked = !!state.autoRunCopy;
   dom.scRecord.value = state.shortcuts.record;
   dom.scSend.value = state.shortcuts.send;
   dom.scCopy.value = state.shortcuts.copy;
@@ -1607,6 +1630,10 @@ function refreshAvailabilityUI() {
 dom.defaultPrompt.addEventListener('input', (e) => {
   state.defaultPrompt = e.target.value;
   if (!dom.promptText.value) dom.promptText.value = state.defaultPrompt;
+  saveState();
+});
+dom.autoRunCopy.addEventListener('change', (e) => {
+  state.autoRunCopy = e.target.checked;
   saveState();
 });
 dom.langSelect.addEventListener('change', (e) => { state.lang = e.target.value; saveState(); });
