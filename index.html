@@ -753,6 +753,17 @@ function getAvailableSelectedModels() {
     .filter(m => m && isModelAvailable(m));
 }
 
+// True if model already has a successful transcript for the current audio.
+function hasFreshSuccess(modelId) {
+  const r = cachedResults[modelId];
+  return !!(r && r.audioId === currentAudioId && r.text != null);
+}
+
+// Models that still need to be transcribed for the current audio.
+function getModelsToRun() {
+  return getAvailableSelectedModels().filter(m => !hasFreshSuccess(m.id));
+}
+
 /* ============================================================ *
  * STATE & LOCAL STORAGE
  * ============================================================ */
@@ -837,6 +848,10 @@ let recordedDurationSec = 0;
 let recStartedAt = 0;
 let timerHandle = null;
 let isRecording = false;
+// Per-audio result cache so model-selection changes don't wipe paid transcripts.
+// Successful entries also gate the Send button (no re-charging on unchanged audio).
+let currentAudioId = null;
+const cachedResults = {}; // modelId -> { audioId, text?, costUsd?, durationSec?, error? }
 
 async function startRecording() {
   if (isRecording) return;
@@ -864,8 +879,10 @@ async function startRecording() {
     recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
     stream.getTracks().forEach(t => t.stop());
     isRecording = false;
+    currentAudioId = Date.now(); // invalidates cached results from prior audio
     updateRecorderUI();
     refreshCostStrip();
+    renderResultsLayout(); // clear stale result cards from previous audio
   };
   mediaRecorder.start();
   recStartedAt = Date.now();
@@ -913,7 +930,7 @@ function updateRecorderUI() {
     if (recordedBlob) {
       dom.recStatus.innerHTML = `ready · ${recordedDurationSec.toFixed(1)}s · ${(recordedBlob.size / 1024).toFixed(1)} KB`;
       dom.timer.textContent = formatTimer(recordedDurationSec * 1000);
-      dom.sendBtn.disabled = getAvailableSelectedModels().length === 0;
+      dom.sendBtn.disabled = getModelsToRun().length === 0;
     } else {
       dom.recStatus.textContent = '— idle —';
       dom.sendBtn.disabled = true;
@@ -1233,6 +1250,14 @@ function renderResultsLayout() {
     grid.appendChild(makeCard(m));
   }
   dom.resultsContainer.appendChild(grid);
+
+  // Replay cached results so model-selection changes don't wipe paid transcripts.
+  for (const m of sel) {
+    const cached = cachedResults[m.id];
+    if (!cached || cached.audioId !== currentAudioId) continue;
+    if (cached.text != null) setCardResult(m.id, cached.text, cached.costUsd, cached.durationSec);
+    else if (cached.error) setCardError(m.id, cached.error);
+  }
 }
 
 function makeCard(model) {
@@ -1298,6 +1323,7 @@ function setCardLoading(modelId) {
 }
 
 function setCardResult(modelId, text, costUsd, durationSec) {
+  cachedResults[modelId] = { audioId: currentAudioId, text, costUsd, durationSec };
   const card = dom.resultsContainer.querySelector(`.card[data-model-id="${CSS.escape(modelId)}"]`);
   if (!card) return;
   const body = card.querySelector('[data-body-slot]');
@@ -1306,9 +1332,11 @@ function setCardResult(modelId, text, costUsd, durationSec) {
   const slot = card.querySelector('[data-cost-slot]');
   slot.innerHTML = `<b>${fmtCost(costUsd)}</b><span class="duration">${durationSec.toFixed(1)}s audio</span>`;
   card.querySelector('[data-copy-btn]').disabled = !text;
+  updateRecorderUI(); // refresh Send button (may now be disabled)
 }
 
 function setCardError(modelId, message) {
+  cachedResults[modelId] = { audioId: currentAudioId, error: message };
   const card = dom.resultsContainer.querySelector(`.card[data-model-id="${CSS.escape(modelId)}"]`);
   if (!card) return;
   const body = card.querySelector('[data-body-slot]');
@@ -1329,7 +1357,8 @@ async function runTranscriptions() {
   const prompt = (dom.promptText.value || state.defaultPrompt).trim();
   const dur = recordedDurationSec;
 
-  // Mark blocked models with a clear error; only run available ones
+  // Mark blocked models with a clear error; skip models already transcribed for
+  // the current audio (no re-charging on unchanged audio); only run the rest.
   const runnable = [];
   for (const m of sel) {
     if (!isModelAvailable(m)) {
@@ -1337,11 +1366,14 @@ async function runTranscriptions() {
       setCardError(m.id, `Disabled — missing ${keyName} API key. Open settings (,) to add it.`);
       continue;
     }
+    if (hasFreshSuccess(m.id)) continue; // already done for this audio
     setCardLoading(m.id);
     runnable.push(m);
   }
   if (runnable.length === 0) {
-    showToast('All selected models are disabled — add API keys', 'error');
+    const allDone = sel.every(m => isModelAvailable(m) && hasFreshSuccess(m.id));
+    if (allDone) showToast('Already transcribed for this audio', 'info');
+    else showToast('All selected models are disabled — add API keys', 'error');
     return;
   }
 
@@ -1567,8 +1599,10 @@ function refreshAvailabilityUI() {
   refreshSelectedLabel();
   refreshCostStrip();
   renderResultsLayout();
-  // Make sure send button reflects state
-  if (recordedBlob && getAvailableSelectedModels().length > 0) dom.sendBtn.disabled = false;
+  // Make sure send button reflects state (consider cached results)
+  if (!isRecording) {
+    dom.sendBtn.disabled = !(recordedBlob && getModelsToRun().length > 0);
+  }
 }
 dom.defaultPrompt.addEventListener('input', (e) => {
   state.defaultPrompt = e.target.value;
