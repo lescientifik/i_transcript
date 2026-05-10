@@ -654,9 +654,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 <div class="toast" id="toast"></div>
 
-<!-- Silero VAD via @ricky0123/vad-web. Bundles its own ORT JS; we only need to
-     point ORT's wasm files at the matching CDN version. The .onnx model is
-     auto-fetched from this script's directory (jsdelivr). -->
+<!-- Silero VAD via @ricky0123/vad-web. The UMD bundle takes onnxruntime-web as
+     an external dep (`window.ort`), so ORT must load FIRST. ORT's wasm files
+     are auto-resolved relative to the ort.min.js script URL on jsdelivr, and
+     the .onnx model is auto-fetched from the vad bundle's directory. -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.29/dist/bundle.min.js"></script>
 
 <script>
