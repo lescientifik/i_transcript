@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STT Bench — Transcription comparator</title>
+<style>
+/* ---------- design tokens ---------- */
+:root {
+  --bg: #0e0f12;
+  --bg-2: #15171c;
+  --bg-3: #1c1f26;
+  --border: #2a2e38;
+  --border-2: #383d49;
+  --text: #e7e9ee;
+  --text-2: #a4abb8;
+  --text-3: #6b7280;
+  --accent: #ff5a3d;        /* rec / actions */
+  --accent-2: #ffb547;       /* warnings/highlights */
+  --good: #5ad19a;
+  --bad: #ef4444;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --serif: "Iowan Old Style", "Charter", "Source Serif Pro", Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column;
+}
+
+button { font-family: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; color: inherit; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.brand {
+  font-family: var(--serif);
+  font-size: 19px; font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.brand .dot { color: var(--accent); }
+.brand small {
+  font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-3); margin-left: 8px; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.topbar-spacer { flex: 1; }
+
+.icon-btn {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-2); padding: 7px 11px;
+  border-radius: 7px; font-size: 12.5px;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: all 120ms ease;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--border-2); background: var(--bg-3); }
+.icon-btn .kbd {
+  font-family: var(--mono); font-size: 10.5px;
+  background: var(--bg); padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+/* ---------- layout ---------- */
+.main { flex: 1; display: flex; flex-direction: column; padding: 24px 22px; gap: 18px; max-width: 1500px; width: 100%; margin: 0 auto; }
+
+/* ---------- recorder block ---------- */
+.recorder {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.recorder-meta {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 14px; gap: 16px; flex-wrap: wrap;
+}
+.recorder-meta-left {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--text-3); text-transform: uppercase; letter-spacing: 0.07em;
+}
+.cost-strip {
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--text-2);
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+.cost-strip .cost-item { display: flex; gap: 6px; align-items: center; }
+.cost-strip .cost-item b { color: var(--accent-2); font-weight: 600; }
+.cost-strip .cost-item .mid { color: var(--text-3); }
+
+.recorder-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.rec-btn {
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  border: 2px solid var(--border-2);
+  background: var(--bg-3);
+  color: var(--text);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; transition: all 200ms ease; position: relative;
+}
+.rec-btn:hover { border-color: var(--accent); }
+.rec-btn .rec-dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent);
+  transition: all 200ms ease;
+}
+.rec-btn .rec-label {
+  font-family: var(--mono); font-size: 9.5px;
+  color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.rec-btn.recording { border-color: var(--accent); background: rgba(255, 90, 61, 0.08); }
+.rec-btn.recording .rec-dot {
+  background: var(--accent);
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 90, 61, 0.5); }
+  50% { box-shadow: 0 0 0 14px rgba(255, 90, 61, 0); }
+}
+
+.rec-info {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  justify-content: center;
+}
+.rec-info .timer {
+  font-family: var(--mono); font-size: 24px; font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.rec-info .rec-status {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.07em;
+}
+.rec-info .rec-status .live { color: var(--accent); }
+
+.rec-actions { display: flex; flex-direction: column; gap: 10px; min-width: 200px; }
+.rec-actions select, .rec-actions .send-btn {
+  height: 40px; padding: 0 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 13px;
+}
+.rec-actions select:focus { outline: none; border-color: var(--border-2); }
+.send-btn {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  font-weight: 600; transition: all 130ms ease;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.send-btn:hover:not(:disabled) { filter: brightness(1.1); }
+.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.send-btn .kbd { background: rgba(0,0,0,0.25); border: 1px solid rgba(0,0,0,0.2); padding: 1px 5px; border-radius: 3px; font-size: 10.5px; font-family: var(--mono); }
+
+/* prompt for multimodal */
+.prompt-row { display: none; margin-top: 12px; }
+.prompt-row.show { display: block; }
+.prompt-row textarea {
+  width: 100%; resize: vertical; min-height: 38px; max-height: 110px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 13px; color: var(--text);
+}
+.prompt-row textarea:focus { outline: none; border-color: var(--border-2); }
+.prompt-row label {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.07em;
+  display: block; margin-bottom: 5px;
+}
+
+/* ---------- results grid ---------- */
+.results { display: grid; gap: 14px; }
+.results.cols-1 { grid-template-columns: 1fr; }
+.results.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.results.cols-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) {
+  .results.cols-2, .results.cols-3 { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  display: flex; flex-direction: column;
+  min-height: 230px;
+  overflow: hidden;
+}
+.card.unavailable {
+  border-color: var(--border);
+  opacity: 0.65;
+  background:
+    linear-gradient(0deg, var(--bg-2), var(--bg-2)),
+    repeating-linear-gradient(
+      45deg, transparent, transparent 8px,
+      rgba(255, 181, 71, 0.05) 8px, rgba(255, 181, 71, 0.05) 16px
+    );
+  background-blend-mode: normal;
+}
+.card.unavailable .card-body { color: var(--accent-2); font-family: var(--mono); font-size: 12px; }
+.card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.card-name {
+  font-family: var(--serif); font-size: 17px; font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.3;
+}
+.card-meta {
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.07em;
+  margin-top: 3px;
+}
+.card-meta .provider-tag {
+  display: inline-block; padding: 1px 6px;
+  border-radius: 3px; margin-right: 5px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  color: var(--text-2);
+}
+.card-meta .provider-tag.openrouter { color: #88c0ff; border-color: #2d4060; }
+.card-meta .provider-tag.mistral { color: #ff8c5a; border-color: #5a3320; }
+
+.card-cost {
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--text-3); text-align: right;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.card-cost b { color: var(--accent-2); font-weight: 600; }
+.card-cost .duration { color: var(--text-3); font-size: 10.5px; display: block; }
+
+.card-body {
+  flex: 1; padding: 14px 16px;
+  font-family: var(--serif); font-size: 15.5px; line-height: 1.55;
+  white-space: pre-wrap; word-wrap: break-word;
+  color: var(--text);
+  min-height: 80px;
+  overflow-y: auto;
+  max-height: 460px;
+}
+.card-body.empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3); font-family: var(--mono); font-size: 11.5px;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  font-style: normal;
+}
+.card-body.error {
+  font-family: var(--mono); font-size: 12px;
+  color: var(--bad);
+}
+.card-body.loading {
+  display: flex; align-items: center; justify-content: center;
+}
+.spinner {
+  width: 22px; height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.card-foot {
+  display: flex; gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.card-foot button {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-2); padding: 6px 10px;
+  border-radius: 6px; font-size: 11.5px;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: all 120ms ease;
+}
+.card-foot button:hover { color: var(--text); border-color: var(--border-2); background: var(--bg-3); }
+.card-foot button.copied { color: var(--good); border-color: var(--good); }
+.card-foot button .kbd { background: var(--bg-3); border: 1px solid var(--border); padding: 1px 5px; border-radius: 3px; font-size: 10px; }
+
+/* empty state */
+.empty-state {
+  text-align: center; padding: 60px 20px;
+  color: var(--text-3);
+}
+.empty-state .big {
+  font-family: var(--serif); font-size: 22px;
+  font-style: italic; color: var(--text-2);
+  margin-bottom: 8px;
+}
+.empty-state .small {
+  font-family: var(--mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+
+/* ---------- settings drawer ---------- */
+.drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0; pointer-events: none;
+  transition: opacity 180ms ease;
+  z-index: 50;
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(560px, 92vw);
+  background: var(--bg-2);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(.4,0,.2,1);
+  z-index: 51;
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  position: sticky; top: 0; z-index: 1;
+}
+.drawer-title {
+  font-family: var(--serif); font-size: 19px; font-weight: 600;
+}
+.close-btn {
+  background: transparent; border: none; color: var(--text-2);
+  font-size: 22px; line-height: 1;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+}
+.close-btn:hover { background: var(--bg-3); color: var(--text); }
+
+.drawer-body { padding: 22px; flex: 1; }
+.drawer-section { margin-bottom: 28px; }
+.drawer-section h3 {
+  font-family: var(--mono); font-size: 11.5px;
+  text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--text-3);
+  margin-bottom: 12px; font-weight: 600;
+}
+.drawer-section .help {
+  font-size: 12.5px; color: var(--text-3);
+  margin-top: 6px; line-height: 1.5;
+}
+.drawer-section input[type="password"],
+.drawer-section input[type="text"],
+.drawer-section textarea {
+  width: 100%;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 13px; color: var(--text);
+  font-family: var(--mono);
+}
+.drawer-section input:focus, .drawer-section textarea:focus {
+  outline: none; border-color: var(--border-2);
+}
+.drawer-section textarea { font-family: var(--sans); min-height: 60px; resize: vertical; }
+
+/* model selection list */
+.model-list { display: flex; flex-direction: column; gap: 6px; }
+.model-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 130ms ease;
+}
+.model-item:hover { border-color: var(--border-2); }
+.model-item.selected { border-color: var(--accent); background: rgba(255, 90, 61, 0.04); }
+.model-item.disabled {
+  opacity: 0.5; cursor: not-allowed;
+  background: repeating-linear-gradient(
+    45deg, var(--bg-3), var(--bg-3) 6px,
+    rgba(255, 255, 255, 0.02) 6px, rgba(255, 255, 255, 0.02) 12px
+  );
+}
+.model-item.disabled:hover { border-color: var(--border); }
+.model-item.disabled input { cursor: not-allowed; }
+.model-item-disabled-hint {
+  margin-top: 6px;
+  font-family: var(--mono); font-size: 10.5px;
+  color: var(--accent-2);
+  background: rgba(255, 181, 71, 0.08);
+  padding: 3px 6px; border-radius: 4px;
+  display: inline-block;
+}
+.model-item input[type="checkbox"] {
+  margin-top: 3px; accent-color: var(--accent);
+  width: 14px; height: 14px;
+}
+.model-item-info { flex: 1; }
+.model-item-name {
+  font-weight: 600; font-size: 13.5px;
+  font-family: var(--sans);
+}
+.model-item-id {
+  font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.model-item-price {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--accent-2);
+  margin-top: 4px;
+}
+.model-item-tags { margin-top: 4px; }
+.model-item-tag {
+  display: inline-block; padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--bg);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  margin-right: 4px;
+}
+.model-item-tag.openrouter { color: #88c0ff; border-color: #2d4060; }
+.model-item-tag.mistral { color: #ff8c5a; border-color: #5a3320; }
+
+.shortcut-row {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 12px; align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.shortcut-row:last-child { border-bottom: none; }
+.shortcut-row label { font-size: 13px; }
+.shortcut-row .help-inline { color: var(--text-3); font-size: 11.5px; }
+.shortcut-input {
+  width: 110px; text-align: center;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--mono); font-size: 12px;
+}
+
+/* toasts */
+.toast {
+  position: fixed; bottom: 22px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg-3);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-family: var(--mono); font-size: 12px;
+  color: var(--text);
+  opacity: 0; transition: all 200ms ease;
+  pointer-events: none;
+  z-index: 100;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { border-color: var(--bad); color: var(--bad); }
+.toast.success { border-color: var(--good); color: var(--good); }
+
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    STT<span class="dot">·</span>Bench
+    <small>transcription comparator</small>
+  </div>
+  <div class="topbar-spacer"></div>
+  <button id="settings-btn" class="icon-btn" title="Settings">
+    settings <span class="kbd">,</span>
+  </button>
+</div>
+
+<div class="main">
+
+  <!-- recorder -->
+  <div class="recorder">
+    <div class="recorder-meta">
+      <div class="recorder-meta-left" id="selected-label">— No model selected —</div>
+      <div class="cost-strip" id="cost-strip"></div>
+    </div>
+
+    <div class="recorder-row">
+      <button id="rec-btn" class="rec-btn" title="Toggle recording">
+        <div class="rec-dot"></div>
+        <div class="rec-label" id="rec-btn-label">REC</div>
+      </button>
+
+      <div class="rec-info">
+        <div class="timer" id="timer">00:00.0</div>
+        <div class="rec-status" id="rec-status">— idle —</div>
+      </div>
+
+      <div class="rec-actions">
+        <select id="lang-select">
+          <option value="fr">Français (par défaut)</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="de">Deutsch</option>
+          <option value="it">Italiano</option>
+          <option value="pt">Português</option>
+          <option value="">— auto-detect —</option>
+        </select>
+        <button id="send-btn" class="send-btn" disabled>
+          <span>Transcribe</span>
+          <span class="kbd" id="send-kbd">Enter</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="prompt-row" id="prompt-row">
+      <label>Prompt for multimodal models (Voxtral Small, Gemini)</label>
+      <textarea id="prompt-text"></textarea>
+    </div>
+  </div>
+
+  <!-- results -->
+  <div id="results-container"></div>
+
+</div>
+
+<!-- settings drawer -->
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="drawer-title">Settings</div>
+    <button class="close-btn" id="drawer-close">×</button>
+  </div>
+  <div class="drawer-body">
+
+    <div class="drawer-section">
+      <h3>API Keys</h3>
+      <div style="margin-bottom: 14px">
+        <label style="font-size: 12.5px; color: var(--text-2); display: block; margin-bottom: 6px">OpenRouter API Key</label>
+        <input type="password" id="key-openrouter" placeholder="sk-or-v1-…" autocomplete="off">
+      </div>
+      <div>
+        <label style="font-size: 12.5px; color: var(--text-2); display: block; margin-bottom: 6px">Mistral API Key</label>
+        <input type="password" id="key-mistral" placeholder="…" autocomplete="off">
+      </div>
+      <p class="help">
+        Stored locally in your browser (localStorage). Never sent anywhere except to the corresponding APIs.
+      </p>
+    </div>
+
+    <div class="drawer-section">
+      <h3>Models</h3>
+      <div class="model-list" id="model-list"></div>
+      <p class="help">
+        Tick the models you want to use. Tip: select a single model for the cleaner one-up layout and the <span class="kbd" style="background: var(--bg-3); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); border: 1px solid var(--border)">K</span> shortcut to copy.
+      </p>
+    </div>
+
+    <div class="drawer-section">
+      <h3>Default prompt (multimodal)</h3>
+      <textarea id="default-prompt" rows="3"></textarea>
+      <p class="help">
+        Used by Voxtral Small and Gemini 3.1 Flash Lite (which need a text prompt alongside the audio).
+      </p>
+    </div>
+
+    <div class="drawer-section">
+      <h3>Keyboard shortcuts</h3>
+      <div class="shortcut-row">
+        <label>
+          Toggle recording
+          <span class="help-inline" style="display:block">Press to start/stop recording</span>
+        </label>
+        <input class="shortcut-input" id="sc-record" data-action="record" readonly>
+      </div>
+      <div class="shortcut-row">
+        <label>
+          Send / Transcribe
+          <span class="help-inline" style="display:block">Sends the audio after recording</span>
+        </label>
+        <input class="shortcut-input" id="sc-send" data-action="send" readonly>
+      </div>
+      <div class="shortcut-row">
+        <label>
+          Copy result (mono-model only)
+          <span class="help-inline" style="display:block">Copies the single result to clipboard</span>
+        </label>
+        <input class="shortcut-input" id="sc-copy" data-action="copy" readonly>
+      </div>
+      <div class="shortcut-row">
+        <label>
+          Open settings
+          <span class="help-inline" style="display:block">Opens this drawer</span>
+        </label>
+        <input class="shortcut-input" id="sc-settings" data-action="settings" readonly>
+      </div>
+      <p class="help">
+        Click an input then press the desired key. Shortcuts are disabled when typing in a text field.
+      </p>
+    </div>
+
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ============================================================ *
+ * MODELS CATALOG
+ * ============================================================ */
+// Each model carries `requiredKey` — the API key that must be present
+// in localStorage for the model to be usable. UI greys out models whose
+// key is missing.
+//
+// Note on duplicates: Voxtral Small is available via BOTH providers.
+// We list the OpenRouter version first (preferred default).
+const MODELS = [
+  // ---- OpenRouter — dedicated STT (audio->transcription endpoint) ----
+  {
+    id: 'openai/whisper-large-v3-turbo',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'transcription',
+    name: 'Whisper Large V3 Turbo',
+    priceLabel: '$0.04 / hour',
+    pricing: { type: 'per_hour', perHour: 0.04 },
+    tags: ['STT dédié', 'Groq']
+  },
+  {
+    id: 'openai/whisper-large-v3',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'transcription',
+    name: 'Whisper Large V3',
+    priceLabel: '$0.111 / hour',
+    pricing: { type: 'per_hour', perHour: 0.111 },
+    tags: ['STT dédié', 'Groq']
+  },
+  {
+    id: 'openai/whisper-1',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'transcription',
+    name: 'Whisper 1',
+    priceLabel: '$0.006 / minute',
+    pricing: { type: 'per_minute', perMin: 0.006 },
+    tags: ['STT dédié']
+  },
+  {
+    id: 'openai/gpt-4o-mini-transcribe',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'transcription',
+    name: 'GPT-4o Mini Transcribe',
+    priceLabel: '$0.003 / minute',
+    pricing: { type: 'per_minute', perMin: 0.003 },
+    tags: ['STT dédié']
+  },
+  {
+    id: 'openai/gpt-4o-transcribe',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'transcription',
+    name: 'GPT-4o Transcribe',
+    priceLabel: '$0.006 / minute',
+    pricing: { type: 'per_minute', perMin: 0.006 },
+    tags: ['STT dédié']
+  },
+
+  // ---- OpenRouter — multimodal chat completions ----
+  {
+    id: 'mistralai/voxtral-small-24b-2507',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'chat',
+    name: 'Voxtral Small 24B (via OR)',
+    priceLabel: '~$0.006/min ($100/M sec audio + text out)',
+    pricing: {
+      type: 'multimodal',
+      audioPerSec: 0.0001,        // $100 / 1M sec
+      textOutPerToken: 0.0000003  // $0.30 / 1M tokens
+    },
+    tags: ['multimodal', 'preferred']
+  },
+  {
+    id: 'google/gemini-3.1-flash-lite',
+    provider: 'openrouter', requiredKey: 'openrouter',
+    endpoint: 'chat',
+    name: 'Gemini 3.1 Flash Lite',
+    priceLabel: '~$0.00125/min (audio: $0.50/M tok, text: $1.50/M tok)',
+    pricing: {
+      type: 'multimodal',
+      audioPerToken: 0.0000005,   // $0.50 / 1M tokens
+      audioTokensPerSec: 32,      // Google docs: 32 tok/sec
+      textOutPerToken: 0.0000015  // $1.50 / 1M tokens
+    },
+    tags: ['multimodal']
+  },
+
+  // ---- Mistral direct API ----
+  {
+    id: 'voxtral-mini-latest',
+    provider: 'mistral', requiredKey: 'mistral',
+    endpoint: 'transcription',
+    name: 'Voxtral Mini Transcribe V2',
+    priceLabel: '$0.003 / minute',
+    pricing: { type: 'per_minute', perMin: 0.003 },
+    tags: ['STT dédié', 'Mistral only']
+  },
+  {
+    // Voxtral Small is also available via Mistral directly (alternative).
+    // Same model as the OpenRouter entry above; OR version is preferred by default.
+    id: 'voxtral-small-latest',
+    provider: 'mistral', requiredKey: 'mistral',
+    endpoint: 'transcription',
+    name: 'Voxtral Small (via Mistral)',
+    priceLabel: '$100/M sec audio (≈ $0.006/min)',
+    pricing: { type: 'per_minute', perMin: 0.006 },
+    tags: ['STT dédié', 'alternative']
+  }
+];
+
+function isModelAvailable(model) {
+  if (!model) return false;
+  return !!(state.apiKeys[model.requiredKey] || '').trim();
+}
+
+function getAvailableSelectedModels() {
+  return state.selectedModelIds
+    .map(id => MODELS.find(m => m.id === id))
+    .filter(m => m && isModelAvailable(m));
+}
+
+/* ============================================================ *
+ * STATE & LOCAL STORAGE
+ * ============================================================ */
+const STORAGE_KEY = 'sttbench.v1';
+
+const DEFAULT_STATE = {
+  apiKeys: { openrouter: '', mistral: '' },
+  selectedModelIds: ['openai/whisper-large-v3-turbo'],
+  lang: 'fr',
+  defaultPrompt: 'Transcris cet audio mot à mot. Réponds uniquement avec la transcription, sans aucun commentaire.',
+  shortcuts: {
+    record: 'F',
+    send: 'Enter',
+    copy: 'K',
+    settings: ','
+  }
+};
+
+let state = loadState();
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_STATE));
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_STATE,
+      ...parsed,
+      apiKeys: { ...DEFAULT_STATE.apiKeys, ...(parsed.apiKeys || {}) },
+      shortcuts: { ...DEFAULT_STATE.shortcuts, ...(parsed.shortcuts || {}) }
+    };
+  } catch (e) {
+    console.warn('Failed to load state, using defaults', e);
+    return JSON.parse(JSON.stringify(DEFAULT_STATE));
+  }
+}
+
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch (e) { console.warn('Failed to save state', e); }
+}
+
+/* ============================================================ *
+ * DOM REFS
+ * ============================================================ */
+const $ = (id) => document.getElementById(id);
+const dom = {
+  selectedLabel: $('selected-label'),
+  costStrip: $('cost-strip'),
+  recBtn: $('rec-btn'),
+  recBtnLabel: $('rec-btn-label'),
+  timer: $('timer'),
+  recStatus: $('rec-status'),
+  langSelect: $('lang-select'),
+  sendBtn: $('send-btn'),
+  sendKbd: $('send-kbd'),
+  promptRow: $('prompt-row'),
+  promptText: $('prompt-text'),
+  resultsContainer: $('results-container'),
+  drawerBackdrop: $('drawer-backdrop'),
+  drawer: $('drawer'),
+  drawerClose: $('drawer-close'),
+  settingsBtn: $('settings-btn'),
+  keyOR: $('key-openrouter'),
+  keyMistral: $('key-mistral'),
+  modelList: $('model-list'),
+  defaultPrompt: $('default-prompt'),
+  scRecord: $('sc-record'),
+  scSend: $('sc-send'),
+  scCopy: $('sc-copy'),
+  scSettings: $('sc-settings'),
+  toast: $('toast')
+};
+
+/* ============================================================ *
+ * RECORDING
+ * ============================================================ */
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordedBlob = null;
+let recordedDurationSec = 0;
+let recStartedAt = 0;
+let timerHandle = null;
+let isRecording = false;
+
+async function startRecording() {
+  if (isRecording) return;
+  recordedChunks = [];
+  recordedBlob = null;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    showToast('Microphone access denied: ' + err.message, 'error');
+    return;
+  }
+
+  // Prefer webm/opus
+  const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  let mimeType = '';
+  for (const m of mimeCandidates) {
+    if (MediaRecorder.isTypeSupported(m)) { mimeType = m; break; }
+  }
+
+  mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recordedDurationSec = (Date.now() - recStartedAt) / 1000;
+    recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+    stream.getTracks().forEach(t => t.stop());
+    isRecording = false;
+    updateRecorderUI();
+    refreshCostStrip();
+  };
+  mediaRecorder.start();
+  recStartedAt = Date.now();
+  isRecording = true;
+  updateRecorderUI();
+  startTimer();
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  mediaRecorder.stop();
+  stopTimer();
+}
+
+function startTimer() {
+  if (timerHandle) clearInterval(timerHandle);
+  const tick = () => {
+    const ms = Date.now() - recStartedAt;
+    dom.timer.textContent = formatTimer(ms);
+  };
+  tick();
+  timerHandle = setInterval(tick, 100);
+}
+
+function stopTimer() {
+  if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+}
+
+function formatTimer(ms) {
+  const totalSec = ms / 1000;
+  const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+  const s = (totalSec % 60).toFixed(1).padStart(4, '0');
+  return `${m}:${s}`;
+}
+
+function updateRecorderUI() {
+  if (isRecording) {
+    dom.recBtn.classList.add('recording');
+    dom.recBtnLabel.textContent = 'STOP';
+    dom.recStatus.innerHTML = '<span class="live">● recording</span>';
+    dom.sendBtn.disabled = true;
+  } else {
+    dom.recBtn.classList.remove('recording');
+    dom.recBtnLabel.textContent = 'REC';
+    if (recordedBlob) {
+      dom.recStatus.innerHTML = `ready · ${recordedDurationSec.toFixed(1)}s · ${(recordedBlob.size / 1024).toFixed(1)} KB`;
+      dom.timer.textContent = formatTimer(recordedDurationSec * 1000);
+      dom.sendBtn.disabled = getAvailableSelectedModels().length === 0;
+    } else {
+      dom.recStatus.textContent = '— idle —';
+      dom.sendBtn.disabled = true;
+    }
+  }
+}
+
+/* ============================================================ *
+ * COST CALCULATION
+ * ============================================================ */
+function estimateCost(model, durationSec, completionTokens = null) {
+  const p = model.pricing;
+  const durMin = durationSec / 60;
+  switch (p.type) {
+    case 'per_minute': return p.perMin * durMin;
+    case 'per_hour':   return p.perHour * (durationSec / 3600);
+    case 'multimodal': {
+      let audioCost = 0;
+      if (p.audioPerSec)        audioCost = p.audioPerSec * durationSec;
+      else if (p.audioPerToken) audioCost = p.audioPerToken * (p.audioTokensPerSec || 1500) * durationSec;
+      const outTokens = completionTokens != null ? completionTokens : 195 * durMin; // fallback estimate
+      const textCost = (p.textOutPerToken || 0) * outTokens;
+      return audioCost + textCost;
+    }
+  }
+  return 0;
+}
+
+function fmtCost(usd) {
+  if (usd == null) return '—';
+  if (usd < 0.0001) return '<$0.0001';
+  if (usd < 0.01)   return '$' + usd.toFixed(5);
+  return '$' + usd.toFixed(4);
+}
+
+function refreshCostStrip() {
+  const dur = recordedDurationSec || 0;
+  dom.costStrip.innerHTML = '';
+  const sel = state.selectedModelIds.map(id => MODELS.find(m => m.id === id)).filter(Boolean);
+  const available = sel.filter(isModelAvailable);
+  const blocked = sel.filter(m => !isModelAvailable(m));
+
+  if (sel.length === 0 || dur === 0) {
+    dom.costStrip.innerHTML = dur === 0
+      ? '<span style="color: var(--text-3)">record audio to see cost estimates</span>'
+      : '<span style="color: var(--text-3)">no model selected</span>';
+    if (blocked.length > 0) {
+      const warn = document.createElement('span');
+      warn.style.color = 'var(--accent-2)';
+      warn.textContent = ` · ${blocked.length} model(s) need API key`;
+      dom.costStrip.appendChild(warn);
+    }
+    return;
+  }
+  for (const m of available) {
+    const cost = estimateCost(m, dur);
+    const item = document.createElement('span');
+    item.className = 'cost-item';
+    item.innerHTML = `<span>${shortName(m)}</span><span class="mid">·</span><b>${fmtCost(cost)}</b>`;
+    dom.costStrip.appendChild(item);
+  }
+  if (blocked.length > 0) {
+    const warn = document.createElement('span');
+    warn.className = 'cost-item';
+    warn.style.color = 'var(--accent-2)';
+    warn.innerHTML = `<span>⚠ ${blocked.length} model(s) disabled — missing API key</span>`;
+    dom.costStrip.appendChild(warn);
+  }
+}
+
+function shortName(m) {
+  return m.id.split('/').pop().replace('-preview', '').replace(/-\d{4}$/, '');
+}
+
+function refreshSelectedLabel() {
+  const sel = state.selectedModelIds.map(id => MODELS.find(m => m.id === id)).filter(Boolean);
+  if (sel.length === 0) {
+    dom.selectedLabel.textContent = '— No model selected —';
+    return;
+  }
+  if (sel.length === 1) {
+    const m = sel[0];
+    const blocked = !isModelAvailable(m);
+    const blockedTag = blocked ? ` · <span style="color: var(--accent-2)">⚠ missing ${m.requiredKey} key</span>` : '';
+    dom.selectedLabel.innerHTML =
+      `<span style="color: var(--text-2)">${m.name}</span>` +
+      ` · <span style="color: var(--text-3)">${m.id}</span>` +
+      ` · <span style="color: var(--accent-2)">${m.priceLabel}</span>` +
+      ` · <span style="color: var(--text-3)">${m.provider}</span>` +
+      blockedTag;
+  } else {
+    const blockedCount = sel.filter(m => !isModelAvailable(m)).length;
+    const tail = blockedCount > 0
+      ? ` · <span style="color: var(--accent-2)">⚠ ${blockedCount} disabled</span>`
+      : '';
+    dom.selectedLabel.innerHTML =
+      `<span style="color: var(--text-2)">${sel.length} models selected</span>` +
+      ` · ${sel.map(m => {
+        const dim = !isModelAvailable(m) ? 'opacity:0.45;text-decoration:line-through' : '';
+        return `<span style="color: var(--text-3); ${dim}">${shortName(m)}</span>`;
+      }).join(' · ')}` + tail;
+  }
+}
+
+function refreshPromptRowVisibility() {
+  const hasMultimodal = state.selectedModelIds
+    .map(id => MODELS.find(m => m.id === id))
+    .filter(Boolean)
+    .some(m => m.endpoint === 'chat');
+  dom.promptRow.classList.toggle('show', hasMultimodal);
+}
+
+/* ============================================================ *
+ * API CALLS
+ * ============================================================ */
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const dataUrl = r.result;
+      const idx = dataUrl.indexOf(',');
+      resolve(dataUrl.substring(idx + 1));
+    };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+function blobExtension(blob) {
+  const t = (blob.type || '').toLowerCase();
+  if (t.includes('webm')) return 'webm';
+  if (t.includes('ogg'))  return 'ogg';
+  if (t.includes('mp4'))  return 'mp4';
+  if (t.includes('wav'))  return 'wav';
+  return 'webm';
+}
+
+/* ============================================================ *
+ * WAV CONVERSION (webm/opus → 16 kHz mono PCM16 WAV)
+ *
+ * Why: OpenRouter's dedicated STT endpoint and several providers
+ * (notably Mistral/Voxtral) reject webm. WAV 16 kHz mono is the
+ * universal format accepted by every transcription API and is
+ * also the native input format Whisper-style models train on.
+ * ============================================================ */
+let _wavCache = { srcBlob: null, wavBlob: null };
+
+async function blobToWav(srcBlob, targetSampleRate = 16000) {
+  // Cache: avoid re-encoding if the same recording is sent again
+  if (_wavCache.srcBlob === srcBlob && _wavCache.wavBlob) return _wavCache.wavBlob;
+
+  const arrayBuffer = await srcBlob.arrayBuffer();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  let decoded;
+  try {
+    decoded = await ac.decodeAudioData(arrayBuffer.slice(0));
+  } finally {
+    ac.close();
+  }
+
+  // Resample to targetSampleRate, mix down to mono via OfflineAudioContext
+  const offline = new OfflineAudioContext(
+    1, Math.ceil(decoded.duration * targetSampleRate), targetSampleRate
+  );
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start(0);
+  const rendered = await offline.startRendering();
+
+  const samples = rendered.getChannelData(0);
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (off, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);                        // PCM chunk size
+  view.setUint16(20, 1, true);                         // PCM
+  view.setUint16(22, 1, true);                         // mono
+  view.setUint32(24, targetSampleRate, true);
+  view.setUint32(28, targetSampleRate * 2, true);      // byte rate
+  view.setUint16(32, 2, true);                         // block align
+  view.setUint16(34, 16, true);                        // bits per sample
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+  const wavBlob = new Blob([buffer], { type: 'audio/wav' });
+  _wavCache = { srcBlob, wavBlob };
+  return wavBlob;
+}
+
+/* OpenRouter STT dedicated endpoint
+ * Schema discovered from API: { model, input_audio: { data, format }, language? }
+ * Body is JSON, NOT multipart form-data. */
+async function transcribeOpenRouter(model, blob, lang) {
+  if (!state.apiKeys.openrouter) throw new Error('OpenRouter API key missing (Settings)');
+  // Convert to WAV — webm is NOT in OpenRouter's supported format list
+  const wavBlob = await blobToWav(blob);
+  const b64 = await blobToBase64(wavBlob);
+  const body = {
+    model: model.id,
+    input_audio: { data: b64, format: 'wav' }
+  };
+  if (lang) body.language = lang;
+  const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${state.apiKeys.openrouter}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${errText.substring(0, 250)}`);
+  }
+  const json = await res.json();
+  return { text: json.text || '', usage: json.usage || null };
+}
+
+/* OpenRouter chat completions (multimodal audio) */
+async function transcribeOpenRouterChat(model, blob, lang, prompt) {
+  if (!state.apiKeys.openrouter) throw new Error('OpenRouter API key missing (Settings)');
+  // Convert to WAV — Voxtral provider rejects webm; Gemini accepts both but WAV is safer
+  const wavBlob = await blobToWav(blob);
+  const b64 = await blobToBase64(wavBlob);
+  const userContent = [
+    { type: 'input_audio', input_audio: { data: b64, format: 'wav' } },
+    { type: 'text', text: prompt + (lang ? `\n\n(Audio language: ${lang})` : '') }
+  ];
+  const body = {
+    model: model.id,
+    messages: [{ role: 'user', content: userContent }]
+  };
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${state.apiKeys.openrouter}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${errText.substring(0, 250)}`);
+  }
+  const json = await res.json();
+  const text = json?.choices?.[0]?.message?.content || '';
+  return { text, usage: json.usage || null };
+}
+
+/* Mistral STT dedicated endpoint (multipart form-data, OpenAI-compatible) */
+async function transcribeMistral(model, blob, lang) {
+  if (!state.apiKeys.mistral) throw new Error('Mistral API key missing (Settings)');
+  // WAV is universally accepted; webm support varies
+  const wavBlob = await blobToWav(blob);
+  const fd = new FormData();
+  fd.append('file', wavBlob, 'audio.wav');
+  fd.append('model', model.id);
+  if (lang) fd.append('language', lang);
+  const res = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${state.apiKeys.mistral}` },
+    body: fd
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Mistral ${res.status}: ${errText.substring(0, 250)}`);
+  }
+  const json = await res.json();
+  return { text: json.text || '', usage: json.usage || null };
+}
+
+async function transcribeWith(model, blob, lang, prompt) {
+  if (model.provider === 'openrouter' && model.endpoint === 'transcription')
+    return transcribeOpenRouter(model, blob, lang);
+  if (model.provider === 'openrouter' && model.endpoint === 'chat')
+    return transcribeOpenRouterChat(model, blob, lang, prompt);
+  if (model.provider === 'mistral' && model.endpoint === 'transcription')
+    return transcribeMistral(model, blob, lang);
+  throw new Error(`Unknown provider/endpoint combo for ${model.id}`);
+}
+
+/* ============================================================ *
+ * RESULTS RENDERING
+ * ============================================================ */
+function renderResultsLayout() {
+  dom.resultsContainer.className = '';
+  dom.resultsContainer.innerHTML = '';
+  const sel = state.selectedModelIds.map(id => MODELS.find(m => m.id === id)).filter(Boolean);
+
+  if (sel.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML = `
+      <div class="big">No model selected</div>
+      <div class="small">open settings (,) to pick at least one</div>`;
+    dom.resultsContainer.appendChild(empty);
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'results';
+  grid.classList.add(sel.length === 1 ? 'cols-1' : sel.length === 2 ? 'cols-2' : 'cols-3');
+
+  for (const m of sel) {
+    grid.appendChild(makeCard(m));
+  }
+  dom.resultsContainer.appendChild(grid);
+}
+
+function makeCard(model) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.dataset.modelId = model.id;
+  const available = isModelAvailable(model);
+  if (!available) card.classList.add('unavailable');
+
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  head.innerHTML = `
+    <div>
+      <div class="card-name">${model.name}</div>
+      <div class="card-meta">
+        <span class="provider-tag ${model.provider}">${model.provider}</span>
+        <span style="font-family: var(--mono); color: var(--text-3)">${model.id}</span>
+      </div>
+    </div>
+    <div class="card-cost" data-cost-slot>
+      <b>${model.priceLabel}</b>
+      <span class="duration"></span>
+    </div>`;
+  card.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'card-body empty';
+  body.dataset.bodySlot = '';
+  if (!available) {
+    const keyName = model.requiredKey === 'openrouter' ? 'OpenRouter' : 'Mistral';
+    body.textContent = `⚠ Disabled — missing ${keyName} API key`;
+  } else {
+    body.textContent = '— no result yet —';
+  }
+  card.appendChild(body);
+
+  const isMono = state.selectedModelIds.length === 1;
+  const foot = document.createElement('div');
+  foot.className = 'card-foot';
+  foot.innerHTML = `
+    <button data-copy-btn disabled>copy text${isMono ? ` <span class="kbd">${shortcutLabel('copy')}</span>` : ''}</button>
+  `;
+  card.appendChild(foot);
+
+  // Wire copy
+  foot.querySelector('[data-copy-btn]').addEventListener('click', () => {
+    const txt = body.textContent || '';
+    if (txt && !txt.startsWith('⚠') && !txt.startsWith('—')) {
+      copyToClipboard(txt, foot.querySelector('[data-copy-btn]'));
+    }
+  });
+
+  return card;
+}
+
+function setCardLoading(modelId) {
+  const card = dom.resultsContainer.querySelector(`.card[data-model-id="${CSS.escape(modelId)}"]`);
+  if (!card) return;
+  const body = card.querySelector('[data-body-slot]');
+  body.className = 'card-body loading';
+  body.innerHTML = '<div class="spinner"></div>';
+  card.querySelector('[data-copy-btn]').disabled = true;
+}
+
+function setCardResult(modelId, text, costUsd, durationSec) {
+  const card = dom.resultsContainer.querySelector(`.card[data-model-id="${CSS.escape(modelId)}"]`);
+  if (!card) return;
+  const body = card.querySelector('[data-body-slot]');
+  body.className = 'card-body';
+  body.textContent = text;
+  const slot = card.querySelector('[data-cost-slot]');
+  slot.innerHTML = `<b>${fmtCost(costUsd)}</b><span class="duration">${durationSec.toFixed(1)}s audio</span>`;
+  card.querySelector('[data-copy-btn]').disabled = !text;
+}
+
+function setCardError(modelId, message) {
+  const card = dom.resultsContainer.querySelector(`.card[data-model-id="${CSS.escape(modelId)}"]`);
+  if (!card) return;
+  const body = card.querySelector('[data-body-slot]');
+  body.className = 'card-body error';
+  body.textContent = message;
+  card.querySelector('[data-copy-btn]').disabled = true;
+}
+
+/* ============================================================ *
+ * RUN ALL TRANSCRIPTIONS
+ * ============================================================ */
+async function runTranscriptions() {
+  if (!recordedBlob) { showToast('No audio recorded', 'error'); return; }
+  const sel = state.selectedModelIds.map(id => MODELS.find(m => m.id === id)).filter(Boolean);
+  if (sel.length === 0) { showToast('No model selected', 'error'); return; }
+
+  const lang = state.lang;
+  const prompt = (dom.promptText.value || state.defaultPrompt).trim();
+  const dur = recordedDurationSec;
+
+  // Mark blocked models with a clear error; only run available ones
+  const runnable = [];
+  for (const m of sel) {
+    if (!isModelAvailable(m)) {
+      const keyName = m.requiredKey === 'openrouter' ? 'OpenRouter' : 'Mistral';
+      setCardError(m.id, `Disabled — missing ${keyName} API key. Open settings (,) to add it.`);
+      continue;
+    }
+    setCardLoading(m.id);
+    runnable.push(m);
+  }
+  if (runnable.length === 0) {
+    showToast('All selected models are disabled — add API keys', 'error');
+    return;
+  }
+
+  // Run available ones in parallel
+  await Promise.all(runnable.map(async (m) => {
+    try {
+      const { text, usage } = await transcribeWith(m, recordedBlob, lang, prompt);
+      let cost;
+      if (m.pricing.type === 'multimodal') {
+        const completionTokens = usage?.completion_tokens ?? null;
+        cost = estimateCost(m, dur, completionTokens);
+      } else {
+        cost = estimateCost(m, dur);
+      }
+      setCardResult(m.id, text || '— empty result —', cost, dur);
+    } catch (err) {
+      console.error(err);
+      setCardError(m.id, err.message || String(err));
+    }
+  }));
+}
+
+/* ============================================================ *
+ * SETTINGS DRAWER
+ * ============================================================ */
+function openDrawer() {
+  dom.drawerBackdrop.classList.add('open');
+  dom.drawer.classList.add('open');
+  dom.keyOR.value = state.apiKeys.openrouter;
+  dom.keyMistral.value = state.apiKeys.mistral;
+  dom.defaultPrompt.value = state.defaultPrompt;
+  dom.scRecord.value = state.shortcuts.record;
+  dom.scSend.value = state.shortcuts.send;
+  dom.scCopy.value = state.shortcuts.copy;
+  dom.scSettings.value = state.shortcuts.settings;
+  refreshModelList();
+}
+function closeDrawer() {
+  dom.drawerBackdrop.classList.remove('open');
+  dom.drawer.classList.remove('open');
+}
+
+function refreshModelList() {
+  dom.modelList.innerHTML = '';
+  for (const m of MODELS) {
+    const isSel = state.selectedModelIds.includes(m.id);
+    const available = isModelAvailable(m);
+    const item = document.createElement('label');
+    item.className = 'model-item' + (isSel ? ' selected' : '') + (available ? '' : ' disabled');
+    const keyName = m.requiredKey === 'openrouter' ? 'OpenRouter' : 'Mistral';
+    const disabledHint = available ? '' :
+      `<div class="model-item-disabled-hint">⚠ Add ${keyName} API key to enable</div>`;
+    item.innerHTML = `
+      <input type="checkbox" ${isSel ? 'checked' : ''} ${available ? '' : 'disabled'} data-mid="${m.id}">
+      <div class="model-item-info">
+        <div class="model-item-name">${m.name}</div>
+        <div class="model-item-id">${m.id}</div>
+        <div class="model-item-price">${m.priceLabel}</div>
+        <div class="model-item-tags">
+          <span class="model-item-tag ${m.provider}">${m.provider}</span>
+          ${m.tags.map(t => `<span class="model-item-tag">${t}</span>`).join('')}
+        </div>
+        ${disabledHint}
+      </div>`;
+    item.querySelector('input').addEventListener('change', (e) => {
+      if (!available) { e.preventDefault(); e.target.checked = false; return; }
+      const checked = e.target.checked;
+      if (checked) {
+        if (!state.selectedModelIds.includes(m.id)) state.selectedModelIds.push(m.id);
+      } else {
+        state.selectedModelIds = state.selectedModelIds.filter(x => x !== m.id);
+      }
+      saveState();
+      item.classList.toggle('selected', checked);
+      refreshSelectedLabel();
+      refreshPromptRowVisibility();
+      refreshCostStrip();
+      renderResultsLayout();
+    });
+    dom.modelList.appendChild(item);
+  }
+}
+
+/* ============================================================ *
+ * SHORTCUTS
+ * ============================================================ */
+function shortcutLabel(action) { return state.shortcuts[action] || ''; }
+
+function keyMatches(e, target) {
+  if (!target) return false;
+  if (target === 'Enter')  return e.key === 'Enter';
+  if (target === 'Space')  return e.code === 'Space';
+  if (target === 'Escape') return e.key === 'Escape';
+  // Single character match (case-insensitive)
+  if (target.length === 1) return e.key.toLowerCase() === target.toLowerCase();
+  return false;
+}
+
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
+document.addEventListener('keydown', (e) => {
+  // Capture mode for shortcut inputs
+  const capturing = document.querySelector('.shortcut-input.capturing');
+  if (capturing) {
+    e.preventDefault();
+    if (e.key === 'Escape') {
+      capturing.classList.remove('capturing');
+      return;
+    }
+    let val = e.key;
+    if (e.code === 'Space') val = 'Space';
+    capturing.value = val;
+    state.shortcuts[capturing.dataset.action] = val;
+    saveState();
+    capturing.classList.remove('capturing');
+    refreshShortcutsUI();
+    return;
+  }
+
+  if (isTypingTarget(e.target)) {
+    // Allow Enter to send when focus is on lang select
+    if (e.target === dom.langSelect && keyMatches(e, state.shortcuts.send)) {
+      e.preventDefault();
+      if (!dom.sendBtn.disabled) runTranscriptions();
+    }
+    return;
+  }
+
+  if (keyMatches(e, state.shortcuts.record)) {
+    e.preventDefault();
+    isRecording ? stopRecording() : startRecording();
+  } else if (keyMatches(e, state.shortcuts.send)) {
+    e.preventDefault();
+    if (!dom.sendBtn.disabled) runTranscriptions();
+  } else if (keyMatches(e, state.shortcuts.copy)) {
+    if (state.selectedModelIds.length === 1) {
+      e.preventDefault();
+      copyMonoResult();
+    }
+  } else if (keyMatches(e, state.shortcuts.settings)) {
+    e.preventDefault();
+    if (dom.drawer.classList.contains('open')) closeDrawer();
+    else openDrawer();
+  }
+});
+
+function refreshShortcutsUI() {
+  dom.sendKbd.textContent = state.shortcuts.send;
+  // Re-render result cards so the copy button shows the right shortcut
+  renderResultsLayout();
+}
+
+/* ============================================================ *
+ * COPY
+ * ============================================================ */
+async function copyToClipboard(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✓ copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1400);
+    } else {
+      showToast('Copied to clipboard', 'success');
+    }
+  } catch (err) {
+    showToast('Copy failed: ' + err.message, 'error');
+  }
+}
+
+function copyMonoResult() {
+  if (state.selectedModelIds.length !== 1) return;
+  const card = dom.resultsContainer.querySelector('.card');
+  if (!card) return;
+  const text = card.querySelector('[data-body-slot]').textContent || '';
+  if (!text || text.startsWith('—')) { showToast('Nothing to copy', 'error'); return; }
+  copyToClipboard(text, card.querySelector('[data-copy-btn]'));
+}
+
+/* ============================================================ *
+ * TOAST
+ * ============================================================ */
+let toastHandle = null;
+function showToast(msg, kind = 'info') {
+  dom.toast.textContent = msg;
+  dom.toast.className = 'toast show ' + kind;
+  if (toastHandle) clearTimeout(toastHandle);
+  toastHandle = setTimeout(() => { dom.toast.classList.remove('show'); }, 2600);
+}
+
+/* ============================================================ *
+ * EVENT WIRING
+ * ============================================================ */
+dom.recBtn.addEventListener('click', () => {
+  isRecording ? stopRecording() : startRecording();
+});
+dom.sendBtn.addEventListener('click', () => runTranscriptions());
+
+dom.settingsBtn.addEventListener('click', openDrawer);
+dom.drawerClose.addEventListener('click', closeDrawer);
+dom.drawerBackdrop.addEventListener('click', closeDrawer);
+
+dom.keyOR.addEventListener('input', (e) => {
+  state.apiKeys.openrouter = e.target.value.trim();
+  saveState();
+  refreshAvailabilityUI();
+});
+dom.keyMistral.addEventListener('input', (e) => {
+  state.apiKeys.mistral = e.target.value.trim();
+  saveState();
+  refreshAvailabilityUI();
+});
+
+function refreshAvailabilityUI() {
+  refreshModelList();
+  refreshSelectedLabel();
+  refreshCostStrip();
+  renderResultsLayout();
+  // Make sure send button reflects state
+  if (recordedBlob && getAvailableSelectedModels().length > 0) dom.sendBtn.disabled = false;
+}
+dom.defaultPrompt.addEventListener('input', (e) => {
+  state.defaultPrompt = e.target.value;
+  if (!dom.promptText.value) dom.promptText.value = state.defaultPrompt;
+  saveState();
+});
+dom.langSelect.addEventListener('change', (e) => { state.lang = e.target.value; saveState(); });
+
+// Shortcut capture
+[dom.scRecord, dom.scSend, dom.scCopy, dom.scSettings].forEach(input => {
+  input.addEventListener('focus', () => {
+    document.querySelectorAll('.shortcut-input.capturing').forEach(x => x.classList.remove('capturing'));
+    input.classList.add('capturing');
+    input.value = '— press a key (Esc to cancel) —';
+  });
+  input.addEventListener('blur', () => {
+    if (input.classList.contains('capturing')) {
+      input.classList.remove('capturing');
+      input.value = state.shortcuts[input.dataset.action] || '';
+    }
+  });
+});
+
+/* ============================================================ *
+ * INIT
+ * ============================================================ */
+function init() {
+  // Apply state to UI
+  dom.langSelect.value = state.lang;
+  dom.promptText.value = state.defaultPrompt;
+  refreshSelectedLabel();
+  refreshPromptRowVisibility();
+  refreshCostStrip();
+  renderResultsLayout();
+  refreshShortcutsUI();
+  updateRecorderUI();
+
+  // Open settings on first run if no API keys
+  if (!state.apiKeys.openrouter && !state.apiKeys.mistral) {
+    setTimeout(openDrawer, 300);
+  }
+}
+init();
+
+</script>
+</body>
+</html>
