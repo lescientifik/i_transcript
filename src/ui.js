@@ -1,4 +1,4 @@
-import { cachedResults, currentAudioId, getVad, isRecording, recordedBlob, startRecording, stopRecording, updateRecorderUI } from './audio.js';
+import { cachedResults, cancelRecording, currentAudioId, getVad, isRecording, recordedBlob, startRecording, stopRecording, updateRecorderUI } from './audio.js';
 import { MODELS, getModelsToRun, isModelAvailable } from './models.js';
 import { saveState, state } from './state.js';
 import { fmtCost, refreshCostStrip, refreshPromptRowVisibility, refreshSelectedLabel, runTranscriptions } from './transcription.js';
@@ -37,6 +37,7 @@ export const dom = {
   autoRunCopy: $('auto-run-copy'),
   vadEnabled: $('vad-enabled'),
   scRecord: $('sc-record'),
+  scCancel: $('sc-cancel'),
   scSend: $('sc-send'),
   scCopy: $('sc-copy'),
   scSettings: $('sc-settings'),
@@ -193,6 +194,7 @@ export function openDrawer() {
   dom.autoRunCopy.checked = !!state.autoRunCopy;
   dom.vadEnabled.checked = !!state.vadEnabled;
   dom.scRecord.value = state.shortcuts.record;
+  dom.scCancel.value = state.shortcuts.cancel;
   dom.scSend.value = state.shortcuts.send;
   dom.scCopy.value = state.shortcuts.copy;
   dom.scSettings.value = state.shortcuts.settings;
@@ -302,6 +304,11 @@ document.addEventListener('keydown', (e) => {
   if (keyMatches(e, state.shortcuts.record)) {
     e.preventDefault();
     isRecording ? stopRecording() : startRecording();
+  } else if (keyMatches(e, state.shortcuts.cancel)) {
+    if (isRecording) {
+      e.preventDefault();
+      cancelRecording();
+    }
   } else if (keyMatches(e, state.shortcuts.send)) {
     e.preventDefault();
     if (!dom.sendBtn.disabled) runTranscriptions();

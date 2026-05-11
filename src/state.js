@@ -13,6 +13,7 @@ const DEFAULT_STATE = {
   vadEnabled: false,
   shortcuts: {
     record: 'F',
+    cancel: 'Z',
     send: 'Enter',
     copy: 'K',
     settings: ','

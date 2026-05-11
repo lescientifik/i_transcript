@@ -13,6 +13,7 @@ export let recordedDurationSec = 0;
 let recStartedAt = 0;
 let timerHandle = null;
 export let isRecording = false;
+let cancelRequested = false;
 // Per-audio result cache so model-selection changes don't wipe paid transcripts.
 // Successful entries also gate the Send button (no re-charging on unchanged audio).
 export let currentAudioId = null;
@@ -42,6 +43,18 @@ export async function startRecording() {
   mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
   mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
   mediaRecorder.onstop = async () => {
+    if (cancelRequested) {
+      cancelRequested = false;
+      stream.getTracks().forEach(t => t.stop());
+      recordedChunks = [];
+      recordedBlob = null;
+      recordedDurationSec = 0;
+      isRecording = false;
+      dom.timer.textContent = '00:00.0';
+      updateRecorderUI();
+      showToast('Recording cancelled', 'success');
+      return;
+    }
     recordedDurationSec = (Date.now() - recStartedAt) / 1000;
     recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
     stream.getTracks().forEach(t => t.stop());
@@ -80,6 +93,13 @@ export async function startRecording() {
 
 export function stopRecording() {
   if (!isRecording) return;
+  mediaRecorder.stop();
+  stopTimer();
+}
+
+export function cancelRecording() {
+  if (!isRecording) return;
+  cancelRequested = true;
   mediaRecorder.stop();
   stopTimer();
 }
