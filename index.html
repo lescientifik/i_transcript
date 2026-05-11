@@ -408,21 +408,21 @@ input.vh {
   clip: rect(0, 0, 0, 0) !important;
   border: 0 !important;
 }
-.api-key-form { margin-bottom: 14px; }
-.api-key-form .key-row { display: flex; gap: 8px; align-items: stretch; }
-.api-key-form .key-row input[type="password"] { flex: 1; min-width: 0; }
-.api-key-form .key-save-btn,
-.api-key-form .key-edit-btn {
-  background: var(--bg-3); border: 1px solid var(--border);
+.api-key-form { margin: 0; }
+.api-key-block .key-row { display: flex; gap: 8px; align-items: stretch; }
+.api-key-block .key-row input[type="password"] { flex: 1; min-width: 0; }
+.api-key-block .key-save-btn,
+.api-key-block .key-edit-btn {
+  background: var(--bg-2); border: 1px solid var(--border);
   color: var(--text); padding: 0 14px; border-radius: 7px;
   font-size: 13px; cursor: pointer; font-family: var(--sans);
 }
-.api-key-form .key-save-btn:hover,
-.api-key-form .key-edit-btn:hover { border-color: var(--border-2); }
-.api-key-form .key-saved {
+.api-key-block .key-save-btn:hover,
+.api-key-block .key-edit-btn:hover { border-color: var(--border-2); }
+.api-key-block .key-saved {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--bg-3); border: 1px solid var(--border);
-  border-radius: 7px; padding: 8px 8px 8px 12px; font-size: 13px;
+  border-radius: 7px; padding: 6px 6px 6px 12px; font-size: 13px;
   color: var(--text-2);
 }
 
