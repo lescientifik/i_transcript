@@ -245,7 +245,13 @@ Le skill `playwright-cli` est installé globalement via `playwright-cli install 
 
 - [x] Branche `modularize` créée et checkout
 - [x] Plan rédigé et validé
-- [ ] Étape 0 : tooling Bun + Playwright
-- [ ] Étape 1 : split CSS/JS via sed
-- [ ] Étape 2 : split modules via ts-morph
-- [ ] Étape 3 : vérification finale + merge/PR
+- [x] Étape 0 : tooling Bun + Playwright (commit `7dfd8ca`)
+- [x] Étape 1 : split CSS/JS via sed (commit `c04d989`)
+- [x] Étape 2 : split modules via ts-morph (commit `feead8d`)
+- [ ] Étape 3 : merge dans `main` (à décider par l'utilisateur)
+
+## Notes post-implémentation
+
+- Avant de lancer `scripts/split-modules.mjs`, le code monolithique a dû recevoir un nouveau banner `PROVIDER API CALLS` juste avant `transcribeOpenRouter` : les fonctions `transcribe*` étaient physiquement à l'intérieur du banner VAD sans en-tête propre, ce qui les rattachait à `audio.js` au lieu de `transcription.js`. Le banner est inséré directement dans le source (commité dans `feead8d`).
+- Pas d'imports circulaires bloquants au sens ES modules : tous les croisements (ui↔audio, ui↔transcription, audio↔transcription) sont utilisés à runtime depuis des handlers, donc les bindings live tiennent.
+- Tests validés via 2 sous-agents OPUS dédiés (skill `playwright-cli`, mode headed) : smoke après étape 1 (PASS, console clean), smoke + fonctionnel après étape 2 (PASS, save clé OpenRouter → toast → localStorage persistant → reload → 7/9 modèles activés, 0 erreur JS).
