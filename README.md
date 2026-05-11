@@ -7,6 +7,11 @@ L'audio part directement du navigateur vers les APIs choisies ; les clés vivent
 
 Site : https://lescientifik.github.io/i_transcript/
 
+> **Ordre de grandeur** : avec **10 $ de crédits OpenRouter** et en utilisant
+> exclusivement **Whisper Large V3 Turbo** (0,04 $/heure côté provider + 5,5 %
+> de frais OpenRouter), on transcrit environ **237 heures d'audio** — soit
+> près de **10 jours** non-stop.
+
 ## Clé API OpenRouter
 
 L'app ne contient aucun modèle ; elle relaie l'audio vers un fournisseur d'IA.
