@@ -1,13 +1,18 @@
 import { state } from '../src/shared/state.js';
-import { decodeTo16kMono } from '../src/shared/audio-codec.js';
+import { decodeTo16kMono, trimWithVAD } from '../src/shared/audio-codec.js';
 import { MODELS } from '../src/shared/models.js';
-import { extensionToFormat, EXTENSION_TO_FORMAT } from '../src/shared/openrouter.js';
+import {
+  extensionToFormat,
+  EXTENSION_TO_FORMAT,
+  postOpenRouterTranscription
+} from '../src/shared/openrouter.js';
 
 /* ============================================================ *
- * UPLOAD APP — step 3.b: file selection + cost-strip
+ * UPLOAD APP — step 3.c: transcription pipeline + breadcrumb +
+ * chrono + result rendering.
  *
- * Pure UI wiring against upload/index.html. No transcription yet
- * (button stub logs a warning — pipeline arrives in step 3.c).
+ * Persistence (sttbench.upload.v1.lastTranscript) + download/copy
+ * land in step 3.d — here we only display in the <pre>.
  * ============================================================ */
 
 const LANG_OPTIONS = [
@@ -21,19 +26,46 @@ const LANG_OPTIONS = [
 ];
 
 const DEFAULT_WHISPER_ID = 'openai/whisper-large-v3-turbo';
+const UPLOAD_STORAGE_KEY = 'sttbench.upload.v1';
+const MAX_BYTES = 18 * 1024 * 1024;
 
 // DOM refs
-const dropZone     = document.getElementById('drop-zone');
-const fileInput    = document.getElementById('file-input');
-const modelSelect  = document.getElementById('model-select');
-const langSelect   = document.getElementById('lang-select');
-const costStrip    = document.getElementById('cost-strip');
-const errorBanner  = document.getElementById('error-banner');
-const btnTranscribe = document.getElementById('btn-transcribe');
+const dropZone        = document.getElementById('drop-zone');
+const fileInput       = document.getElementById('file-input');
+const modelSelect     = document.getElementById('model-select');
+const langSelect      = document.getElementById('lang-select');
+const costStrip       = document.getElementById('cost-strip');
+const errorBanner     = document.getElementById('error-banner');
+const btnTranscribe   = document.getElementById('btn-transcribe');
+const btnCancel       = document.getElementById('btn-cancel');
+const breadcrumb      = document.getElementById('phase-breadcrumb');
+const chrono          = document.getElementById('chrono');
+const transcriptPre   = document.getElementById('transcript-output');
+const resultActions   = document.getElementById('result-actions');
 
-// Module-scoped selected file + computed duration (filled after decode).
+// Module-scoped state
 let selectedFile = null;
 let selectedDurationSec = 0;
+let abortCtrl = null;
+let chronoTimer = null;
+let chronoStart = 0;
+let inFlight = false;
+
+/* ---------- upload-state (localStorage sttbench.upload.v1) ---------- */
+
+function loadUploadState() {
+  try {
+    const raw = localStorage.getItem(UPLOAD_STORAGE_KEY);
+    if (!raw) return { vadEnabled: false, lastTranscript: null };
+    const parsed = JSON.parse(raw);
+    return {
+      vadEnabled: !!parsed.vadEnabled,
+      lastTranscript: parsed.lastTranscript ?? null
+    };
+  } catch {
+    return { vadEnabled: false, lastTranscript: null };
+  }
+}
 
 /* ---------- cost helpers (mirrored from src/transcription.js) ---------- */
 
@@ -56,7 +88,6 @@ function estimateCost(model, durationSec) {
   return 0;
 }
 
-// Always 4 decimals for the cost-strip — scenario 3 asserts /\$\d+\.\d{4}/.
 function fmtCost4(usd) {
   return '$' + (usd || 0).toFixed(4);
 }
@@ -94,11 +125,10 @@ function populateLangSelect() {
     opt.textContent = label;
     langSelect.appendChild(opt);
   }
-  // state.lang may be '' (auto-detect) — both branches handled.
   langSelect.value = state.lang ?? 'fr';
 }
 
-/* ---------- UI helpers ---------- */
+/* ---------- error encart ---------- */
 
 function showError(msg) {
   errorBanner.textContent = msg;
@@ -110,14 +140,20 @@ function clearError() {
   errorBanner.hidden = true;
 }
 
+/* ---------- transcribe-button gating ---------- */
+
 function refreshTranscribeEnabled() {
+  if (inFlight) {
+    btnTranscribe.disabled = true;
+    return;
+  }
   const modelId = modelSelect.value;
-  const lang    = langSelect.value;
   const apiKey  = (state.apiKeys?.openrouter || '').trim();
-  // Empty lang string = auto-detect, still valid. Only modelId, file, apiKey are gating.
-  const enabled = !!selectedFile && !!modelId && lang !== undefined && !!apiKey;
+  const enabled = !!selectedFile && !!modelId && !!apiKey;
   btnTranscribe.disabled = !enabled;
 }
+
+/* ---------- cost-strip ---------- */
 
 function renderCostStrip() {
   const model = MODELS.find(m => m.id === modelSelect.value);
@@ -152,8 +188,6 @@ async function onFileSelected(file) {
   selectedFile = file;
 
   try {
-    // Decode just to get duration. Sample rate of output doesn't matter for
-    // duration math: length / 16000 == originalDurationSec (resampler preserves it).
     const samples = await decodeTo16kMono(file);
     selectedDurationSec = samples.length / 16000;
   } catch (err) {
@@ -173,7 +207,6 @@ async function onFileSelected(file) {
 /* ---------- drop-zone wiring ---------- */
 
 function wireDropZone() {
-  // Click anywhere on the dropzone (except the actual input) triggers picker.
   dropZone.addEventListener('click', (e) => {
     if (e.target === fileInput) return;
     fileInput.click();
@@ -206,12 +239,148 @@ function wireDropZone() {
   });
 }
 
-/* ---------- transcribe stub (step 3.c will replace) ---------- */
+/* ---------- breadcrumb (3-phase visual indicator) ---------- */
 
-function wireTranscribeStub() {
-  btnTranscribe.addEventListener('click', () => {
-    console.warn('[upload] transcribe pipeline arrives in 3.c');
-  });
+const PHASE_ORDER = ['encoding', 'uploading', 'transcribing'];
+
+function setPhase(phase) {
+  breadcrumb.hidden = false;
+  const idx = PHASE_ORDER.indexOf(phase);
+  for (const step of breadcrumb.querySelectorAll('.upload-step')) {
+    const p = step.dataset.phase;
+    const i = PHASE_ORDER.indexOf(p);
+    step.classList.remove('active', 'done');
+    if (i < idx) step.classList.add('done');
+    else if (i === idx) step.classList.add('active');
+  }
+}
+
+function resetBreadcrumb() {
+  breadcrumb.hidden = true;
+  for (const step of breadcrumb.querySelectorAll('.upload-step')) {
+    step.classList.remove('active', 'done');
+  }
+}
+
+/* ---------- chrono mm:ss (100 ms tick) ---------- */
+
+function fmtChrono(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function startChrono() {
+  chronoStart = performance.now();
+  chrono.textContent = '0:00';
+  chrono.hidden = false;
+  chronoTimer = setInterval(() => {
+    chrono.textContent = fmtChrono(performance.now() - chronoStart);
+  }, 100);
+}
+
+function stopChrono() {
+  if (chronoTimer) {
+    clearInterval(chronoTimer);
+    chronoTimer = null;
+  }
+  chrono.hidden = true;
+}
+
+/* ---------- run UI state ---------- */
+
+function enterRunning() {
+  inFlight = true;
+  clearError();
+  btnTranscribe.disabled = true;
+  btnCancel.hidden = false;
+  resultActions.hidden = true;
+  startChrono();
+}
+
+function exitRunning() {
+  inFlight = false;
+  btnCancel.hidden = true;
+  resetBreadcrumb();
+  stopChrono();
+  refreshTranscribeEnabled();
+}
+
+/* ---------- transcribe pipeline ---------- */
+
+async function onTranscribeClick() {
+  if (inFlight) return;
+  const file = selectedFile;
+  if (!file) return;
+  const modelId = modelSelect.value;
+  const lang    = langSelect.value;
+  const apiKey  = (state.apiKeys?.openrouter || '').trim();
+  if (!modelId || !apiKey) return;
+
+  const uploadState = loadUploadState();
+  const vadOn = !!uploadState.vadEnabled;
+
+  abortCtrl = new AbortController();
+  enterRunning();
+
+  try {
+    /* Phase 1 — encoding */
+    setPhase('encoding');
+
+    let blob;
+    let format;
+    if (vadOn) {
+      const result = await trimWithVAD(file);
+      blob = result.blob;
+      format = 'wav';
+    } else {
+      blob = file;
+      format = extensionToFormat(file.name);
+    }
+
+    if (!format) {
+      throw new Error('Format non supporté');
+    }
+    if (blob.size > MAX_BYTES) {
+      const mb = (blob.size / (1024 * 1024)).toFixed(1);
+      const msg = vadOn
+        ? `Fichier post-VAD > 18 MB (${mb} MB, limite OpenAI/OpenRouter). Désactivez le VAD ou utilisez un extrait plus court.`
+        : `Fichier > 18 MB (${mb} MB).`;
+      throw new Error(msg);
+    }
+
+    /* Phase 2 — uploading (base64 + fetch start) */
+    setPhase('uploading');
+
+    /* Phase 3 — transcribing (waiting on response).
+     * postOpenRouterTranscription's blob→base64 happens before the fetch,
+     * but visually we want the user to see we've moved past upload as soon
+     * as the request is in flight. Flip the phase right before the call. */
+    setPhase('transcribing');
+
+    const result = await postOpenRouterTranscription({
+      blob, modelId, language: lang, apiKey, format,
+      signal: abortCtrl.signal
+    });
+
+    transcriptPre.textContent = result.text || '';
+    resultActions.hidden = false;
+  } catch (err) {
+    const isAbort = err?.name === 'AbortError'
+      || /aborted/i.test(err?.message || '');
+    const msg = isAbort
+      ? 'Transcription annulée.'
+      : `Erreur de transcription : ${err?.message || err}`;
+    showError(msg);
+  } finally {
+    abortCtrl = null;
+    exitRunning();
+  }
+}
+
+function onCancelClick() {
+  if (abortCtrl) abortCtrl.abort();
 }
 
 /* ---------- init ---------- */
@@ -220,7 +389,9 @@ function init() {
   populateModelSelect();
   populateLangSelect();
   wireDropZone();
-  wireTranscribeStub();
+
+  btnTranscribe.addEventListener('click', onTranscribeClick);
+  btnCancel.addEventListener('click', onCancelClick);
 
   modelSelect.addEventListener('change', () => {
     renderCostStrip();
