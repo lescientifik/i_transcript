@@ -1,4 +1,4 @@
-import { cachedResults, currentAudioId } from './audio.js';
+import { cachedResults, currentAudioId } from '../audio.js';
 import { state } from './state.js';
 
 /* ============================================================ *

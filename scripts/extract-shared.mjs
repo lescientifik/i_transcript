@@ -46,6 +46,15 @@ const SHARED = path.join(SRC, 'shared');
 // Boot the ts-morph project — load every JS module we may touch.
 // ---------------------------------------------------------------------------
 const project = new Project({
+  // ts-morph needs allowJs so the JS source graph is type-checked and
+  // SourceFile.move() can find + rewrite every import specifier referring to
+  // the moved file. Without allowJs ts-morph silently no-ops on JS imports.
+  compilerOptions: {
+    allowJs: true,
+    checkJs: false,
+    module: 99 /* ESNext */,
+    target: 99 /* ESNext */,
+  },
   manipulationSettings: {
     indentationText: IndentationText.TwoSpaces,
     quoteKind: QuoteKind.Single,
@@ -117,9 +126,56 @@ if (!fs.existsSync(SHARED)) fs.mkdirSync(SHARED, { recursive: true });
   }
 }
 
+// Defensive pass: ts-morph's automatic specifier rewrite on JS files can
+// silently no-op when the symbol resolution doesn't bind through. Walk every
+// remaining src/*.js and explicitly rewrite './state.js' → './shared/state.js'
+// and './models.js' → './shared/models.js' import specifiers. Idempotent:
+// already-correct specifiers stay as-is.
+const CONSUMER_REWRITES = [
+  { from: './state.js', to: './shared/state.js' },
+  { from: './models.js', to: './shared/models.js' },
+];
+for (const rel of ['src/audio.js', 'src/transcription.js', 'src/ui.js', 'src/app.js']) {
+  const abs = path.join(ROOT, rel);
+  if (!fs.existsSync(abs)) continue;
+  const sf = project.getSourceFile(abs);
+  if (!sf) continue;
+  for (const decl of sf.getImportDeclarations()) {
+    const spec = decl.getModuleSpecifierValue();
+    for (const { from, to } of CONSUMER_REWRITES) {
+      if (spec === from) decl.setModuleSpecifier(to);
+    }
+  }
+}
+
 // Persist Phases 1+2 to disk now so the rest of the script can rely on the
 // updated import graph in audio.js / transcription.js / ui.js / app.js.
 await project.save();
+
+// ts-morph's TS-aware specifier rewrite strips `.js` extensions because the
+// resolver accepts extensionless paths. GitHub Pages serves no build step and
+// browsers REQUIRE explicit `.js` extensions for ES modules. Final on-disk
+// normalization pass: re-append `.js` to every relative import specifier that
+// lacks an extension. Idempotent (already-correct specifiers are untouched).
+function normalizeExtensions(absPath) {
+  if (!fs.existsSync(absPath)) return;
+  const before = fs.readFileSync(absPath, 'utf8');
+  const after = before.replace(
+    /from\s+(['"])(\.\.?\/[^'"\n]+?)\1/g,
+    (full, q, spec) => {
+      if (/\.(?:m?js|json)$/.test(spec)) return full; // already extensioned
+      return `from ${q}${spec}.js${q}`;
+    }
+  );
+  if (after !== before) fs.writeFileSync(absPath, after);
+}
+for (const rel of [
+  'src/audio.js', 'src/transcription.js', 'src/ui.js', 'src/app.js',
+  'src/shared/state.js', 'src/shared/models.js',
+  'src/shared/audio-codec.js', 'src/shared/openrouter.js',
+]) {
+  normalizeExtensions(path.join(ROOT, rel));
+}
 
 // ---------------------------------------------------------------------------
 // Phase 3 — Extract audio-codec.js from audio.js
@@ -357,37 +413,55 @@ async function transcribeOpenRouter(model, blob, lang) {
     // already dead). Leave both untouched to keep this script minimal — dead
     // code cleanup is out of scope for this refactor.
 
-    // 4) blobToWav is still imported from './audio.js' in transcription.js;
-    // since audio.js now re-exports nothing called blobToWav (it imports it),
-    // we must reroute that import to './shared/audio-codec.js'. Use ts-morph
-    // to keep the import surgery sane.
     fs.writeFileSync(transPath, trans);
     const transSf = project.getSourceFile(transPath);
     transSf.replaceWithText(trans);
+  }
+}
 
-    const audioImport = transSf.getImportDeclaration('./audio.js');
-    if (audioImport) {
-      const named = audioImport.getNamedImports().map(n => n.getName());
-      const remaining = named.filter(n => n !== 'blobToWav');
-      if (remaining.length === 0) {
-        audioImport.remove();
-      } else {
-        audioImport.removeNamedImports();
-        audioImport.addNamedImports(remaining.map(name => ({ name })));
-      }
-      // Add or extend the shared/audio-codec.js import for blobToWav.
-      let codecImport = transSf.getImportDeclaration('./shared/audio-codec.js');
-      if (!codecImport) {
-        transSf.addImportDeclaration({
-          moduleSpecifier: './shared/audio-codec.js',
-          namedImports: [{ name: 'blobToWav' }],
-        });
-      } else {
-        const codecNames = codecImport.getNamedImports().map(n => n.getName());
-        if (!codecNames.includes('blobToWav')) {
-          codecImport.addNamedImport('blobToWav');
-        }
-      }
+// ---------------------------------------------------------------------------
+// Phase 5 — Migrate every consumer's import of symbols that moved out of
+// src/audio.js into src/shared/audio-codec.js. Any named import of a codec
+// symbol from './audio.js' is rerouted to './shared/audio-codec.js'. This
+// covers both the transcription.js blobToWav reroute and the ui.js getVad
+// reroute (and any future codec symbol consumed across the app).
+// ---------------------------------------------------------------------------
+const CODEC_SYMBOLS = new Set([
+  'blobToWav', 'getVad', 'decodeTo16kMono',
+  'float32ToWavBlob', 'trimWithVAD', 'ORT_VERSION',
+]);
+for (const rel of ['src/transcription.js', 'src/ui.js', 'src/app.js']) {
+  const abs = path.join(ROOT, rel);
+  const sf = project.getSourceFile(abs);
+  if (!sf) continue;
+  const audioImport = sf.getImportDeclaration(d =>
+    d.getModuleSpecifierValue() === './audio.js'
+  );
+  if (!audioImport) continue;
+  const named = audioImport.getNamedImports().map(n => n.getName());
+  const moved = named.filter(n => CODEC_SYMBOLS.has(n));
+  if (moved.length === 0) continue;
+  const remaining = named.filter(n => !CODEC_SYMBOLS.has(n));
+  // Surgical rebuild: remove the moved names from the audio.js import.
+  audioImport.removeNamedImports();
+  if (remaining.length > 0) {
+    audioImport.addNamedImports(remaining.map(name => ({ name })));
+  } else {
+    audioImport.remove();
+  }
+  // Attach (or extend) the shared/audio-codec.js import with the moved names.
+  let codecImport = sf.getImportDeclaration(d =>
+    d.getModuleSpecifierValue() === './shared/audio-codec.js'
+  );
+  if (!codecImport) {
+    sf.addImportDeclaration({
+      moduleSpecifier: './shared/audio-codec.js',
+      namedImports: moved.map(name => ({ name })),
+    });
+  } else {
+    const have = new Set(codecImport.getNamedImports().map(n => n.getName()));
+    for (const name of moved) {
+      if (!have.has(name)) codecImport.addNamedImport(name);
     }
   }
 }
@@ -397,6 +471,16 @@ async function transcribeOpenRouter(model, blob, lang) {
 // reshuffle from phase 4).
 // ---------------------------------------------------------------------------
 await project.save();
+
+// Final normalization pass to re-append `.js` extensions stripped by ts-morph
+// during phase 4 import surgery on transcription.js.
+for (const rel of [
+  'src/audio.js', 'src/transcription.js', 'src/ui.js', 'src/app.js',
+  'src/shared/state.js', 'src/shared/models.js',
+  'src/shared/audio-codec.js', 'src/shared/openrouter.js',
+]) {
+  normalizeExtensions(path.join(ROOT, rel));
+}
 
 console.log('\nDone. src/shared/ extraction complete.');
 console.log('Next: bun smoke-test the main app to confirm no regression.');

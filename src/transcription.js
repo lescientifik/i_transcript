@@ -1,7 +1,9 @@
-import { blobToWav, recordedBlob, recordedDurationSec } from './audio.js';
-import { MODELS, hasFreshSuccess, isModelAvailable } from './models.js';
-import { state } from './state.js';
+import { recordedBlob, recordedDurationSec } from './audio.js';
+import { MODELS, hasFreshSuccess, isModelAvailable } from './shared/models.js';
+import { state } from './shared/state.js';
 import { dom, setCardError, setCardLoading, setCardResult, showToast } from './ui.js';
+import { postOpenRouterTranscription } from './shared/openrouter.js';
+import { blobToWav } from './shared/audio-codec.js';
 
 /* ============================================================ *
  * COST CALCULATION
@@ -138,35 +140,21 @@ function blobExtension(blob) {
  * Functions that hit each provider's HTTP API to transcribe a blob.
  * Each returns `{ text, costUsd }` or throws.
  * ============================================================ */
-/* OpenRouter STT dedicated endpoint
- * Schema discovered from API: { model, input_audio: { data, format }, language? }
- * Body is JSON, NOT multipart form-data. */
+/* OpenRouter STT dedicated endpoint — thin wrapper over
+ * shared/openrouter.js. Kept on this signature so runTranscriptions
+ * and the test surface stay unchanged. */
 async function transcribeOpenRouter(model, blob, lang) {
   if (!state.apiKeys.openrouter) throw new Error('OpenRouter API key missing (Settings)');
-  // Convert to WAV — webm is NOT in OpenRouter's supported format list
+  // OpenRouter dedicated STT endpoint accepts a fixed list of formats and
+  // does NOT include webm. Encode the recorder's webm blob to WAV first.
   const wavBlob = await blobToWav(blob);
-  const b64 = await blobToBase64(wavBlob);
-  const body = {
-    model: model.id,
-    input_audio: { data: b64, format: 'wav' }
-  };
-  if (lang) body.language = lang;
-  const res = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${state.apiKeys.openrouter}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://lescientifik.github.io/i_transcript/',
-      'X-OpenRouter-Title': 'i_transcript'
-    },
-    body: JSON.stringify(body)
+  return postOpenRouterTranscription({
+    blob: wavBlob,
+    modelId: model.id,
+    language: lang,
+    apiKey: state.apiKeys.openrouter,
+    format: 'wav',
   });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`OpenRouter ${res.status}: ${errText.substring(0, 250)}`);
-  }
-  const json = await res.json();
-  return { text: json.text || '', usage: json.usage || null };
 }
 
 /* OpenRouter chat completions (multimodal audio) */

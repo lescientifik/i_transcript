@@ -1,5 +1,5 @@
 import { updateRecorderUI } from './audio.js';
-import { state } from './state.js';
+import { state } from './shared/state.js';
 import { refreshCostStrip, refreshPromptRowVisibility, refreshSelectedLabel } from './transcription.js';
 import { dom, openDrawer, refreshShortcutsUI, renderResultsLayout } from './ui.js';
 

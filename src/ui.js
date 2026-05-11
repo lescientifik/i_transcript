@@ -1,7 +1,8 @@
-import { cachedResults, cancelRecording, currentAudioId, getVad, isRecording, recordedBlob, startRecording, stopRecording, updateRecorderUI } from './audio.js';
-import { MODELS, getModelsToRun, isModelAvailable } from './models.js';
-import { saveState, state } from './state.js';
+import { cachedResults, cancelRecording, currentAudioId, isRecording, recordedBlob, startRecording, stopRecording, updateRecorderUI } from './audio.js';
+import { MODELS, getModelsToRun, isModelAvailable } from './shared/models.js';
+import { saveState, state } from './shared/state.js';
 import { fmtCost, refreshCostStrip, refreshPromptRowVisibility, refreshSelectedLabel, runTranscriptions } from './transcription.js';
+import { getVad } from './shared/audio-codec.js';
 
 /* ============================================================ *
  * DOM REFS
