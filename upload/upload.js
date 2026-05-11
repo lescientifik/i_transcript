@@ -8,11 +8,11 @@ import {
 } from '../src/shared/openrouter.js';
 
 /* ============================================================ *
- * UPLOAD APP — step 3.c: transcription pipeline + breadcrumb +
- * chrono + result rendering.
- *
- * Persistence (sttbench.upload.v1.lastTranscript) + download/copy
- * land in step 3.d — here we only display in the <pre>.
+ * UPLOAD APP — steps 3.c + 3.d:
+ *   3.c — transcription pipeline + breadcrumb + chrono + render
+ *   3.d — localStorage persistence (sttbench.upload.v1) +
+ *         hydratation au load + "Transcript précédent" label +
+ *         download TXT + copier (avec toast feedback)
  * ============================================================ */
 
 const LANG_OPTIONS = [
@@ -41,7 +41,11 @@ const btnCancel       = document.getElementById('btn-cancel');
 const breadcrumb      = document.getElementById('phase-breadcrumb');
 const chrono          = document.getElementById('chrono');
 const transcriptPre   = document.getElementById('transcript-output');
+const transcriptLabel = document.getElementById('transcript-label');
 const resultActions   = document.getElementById('result-actions');
+const btnDownload     = document.getElementById('btn-download');
+const btnCopy         = document.getElementById('btn-copy');
+const toastEl         = document.getElementById('toast');
 
 // Module-scoped state
 let selectedFile = null;
@@ -65,6 +69,20 @@ function loadUploadState() {
   } catch {
     return { vadEnabled: false, lastTranscript: null };
   }
+}
+
+function saveUploadState(next) {
+  try {
+    localStorage.setItem(UPLOAD_STORAGE_KEY, JSON.stringify(next));
+  } catch (err) {
+    console.error('[upload] saveUploadState failed', err);
+  }
+}
+
+function persistLastTranscript(entry) {
+  const current = loadUploadState();
+  current.lastTranscript = entry;
+  saveUploadState(current);
 }
 
 /* ---------- cost helpers (mirrored from src/transcription.js) ---------- */
@@ -140,6 +158,31 @@ function clearError() {
   errorBanner.hidden = true;
 }
 
+/* ---------- toast (local replica of src/ui.js showToast) ---------- */
+
+let toastHandle = null;
+function showToast(msg, kind = 'info') {
+  if (!toastEl) return;
+  toastEl.textContent = msg;
+  toastEl.className = 'toast show ' + kind;
+  if (toastHandle) clearTimeout(toastHandle);
+  toastHandle = setTimeout(() => { toastEl.classList.remove('show'); }, 1500);
+}
+
+/* ---------- "Transcript précédent (<sourceName>)" label ---------- */
+
+function showPreviousLabel(sourceName) {
+  if (!transcriptLabel) return;
+  transcriptLabel.textContent = `Transcript précédent (${sourceName})`;
+  transcriptLabel.hidden = false;
+}
+
+function clearPreviousLabel() {
+  if (!transcriptLabel) return;
+  transcriptLabel.textContent = '';
+  transcriptLabel.hidden = true;
+}
+
 /* ---------- transcribe-button gating ---------- */
 
 function refreshTranscribeEnabled() {
@@ -186,6 +229,15 @@ async function onFileSelected(file) {
   }
 
   selectedFile = file;
+
+  /* Reset behavior (plan point fin 2) : si un précédent transcript existe,
+   * on le LAISSE affiché dans le <pre> et on étiquette la zone
+   * « Transcript précédent (<sourceName>) ». Remplacement atomique
+   * uniquement à la réussite d'une NOUVELLE transcription. */
+  const prev = loadUploadState().lastTranscript;
+  if (prev && prev.sourceName) {
+    showPreviousLabel(prev.sourceName);
+  }
 
   try {
     const samples = await decodeTo16kMono(file);
@@ -364,8 +416,24 @@ async function onTranscribeClick() {
       signal: abortCtrl.signal
     });
 
-    transcriptPre.textContent = result.text || '';
+    const text = result.text || '';
+    /* Atomic replace : <pre> ← new text, label cleared,
+     * localStorage écrit en dernier. */
+    transcriptPre.textContent = text;
+    clearPreviousLabel();
     resultActions.hidden = false;
+
+    const model = MODELS.find(m => m.id === modelId);
+    const estimatedCostUsd = model ? estimateCost(model, selectedDurationSec) : 0;
+    persistLastTranscript({
+      text,
+      sourceName: file.name,
+      modelId,
+      lang,
+      durationSec: selectedDurationSec,
+      costUsd: estimatedCostUsd,
+      timestamp: Date.now()
+    });
   } catch (err) {
     const isAbort = err?.name === 'AbortError'
       || /aborted/i.test(err?.message || '');
@@ -383,6 +451,77 @@ function onCancelClick() {
   if (abortCtrl) abortCtrl.abort();
 }
 
+/* ---------- download TXT ---------- */
+
+function currentTranscriptText() {
+  /* Source de vérité : le <pre> (qui reflète soit le dernier rendu réussi
+   * en mémoire, soit l'hydratation localStorage au load). */
+  return transcriptPre.textContent || '';
+}
+
+function currentSourceName() {
+  /* Pour le nom de fichier, on privilégie lastTranscript.sourceName
+   * (persisté), sinon le fichier courant. */
+  const last = loadUploadState().lastTranscript;
+  if (last && last.sourceName) return last.sourceName;
+  if (selectedFile) return selectedFile.name;
+  return 'transcript';
+}
+
+function basenameToTxt(sourceName) {
+  return sourceName.replace(/\.[^.]+$/, '') + '.txt';
+}
+
+function onDownloadClick() {
+  const text = currentTranscriptText();
+  if (!text) {
+    showToast('Aucun transcript à télécharger', 'error');
+    return;
+  }
+  const filename = basenameToTxt(currentSourceName());
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  /* Anchor doesn't need to be in the DOM for .click() to work in modern
+   * browsers, but Firefox historically required it. Append + remove pour
+   * être safe. */
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  /* Revoke after a tick to let the browser pick up the blob. */
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/* ---------- copy to clipboard ---------- */
+
+async function onCopyClick() {
+  const text = currentTranscriptText();
+  if (!text) {
+    showToast('Aucun transcript à copier', 'error');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Copié ✓', 'success');
+  } catch (err) {
+    showToast('Copie échouée : ' + (err?.message || err), 'error');
+  }
+}
+
+/* ---------- hydratation au load ---------- */
+
+function hydrateFromLastTranscript() {
+  const { lastTranscript } = loadUploadState();
+  if (!lastTranscript || !lastTranscript.text) return;
+  transcriptPre.textContent = lastTranscript.text;
+  resultActions.hidden = false;
+  if (lastTranscript.sourceName) {
+    showPreviousLabel(lastTranscript.sourceName);
+  }
+}
+
 /* ---------- init ---------- */
 
 function init() {
@@ -392,6 +531,8 @@ function init() {
 
   btnTranscribe.addEventListener('click', onTranscribeClick);
   btnCancel.addEventListener('click', onCancelClick);
+  btnDownload.addEventListener('click', onDownloadClick);
+  btnCopy.addEventListener('click', onCopyClick);
 
   modelSelect.addEventListener('change', () => {
     renderCostStrip();
@@ -401,6 +542,7 @@ function init() {
     refreshTranscribeEnabled();
   });
 
+  hydrateFromLastTranscript();
   refreshTranscribeEnabled();
 }
 
