@@ -95,16 +95,18 @@
 
     <div class="drawer-section">
       <h3>API Key — OpenRouter</h3>
-      <form method="post" action="#" class="api-key-form" id="key-form">
-        <input type="text" autocomplete="username" name="username"
-               id="key-username" value="openrouter-api-key"
-               readonly tabindex="-1" class="vh" aria-hidden="true">
-        <div class="key-row">
-          <input type="password" id="key-input" name="password"
-                 autocomplete="current-password" placeholder="sk-or-v1-…">
-          <button type="submit" class="key-save-btn">Save</button>
-        </div>
-      </form>
+      <div class="api-key-block">
+        <form method="post" action="#" class="api-key-form" id="key-form">
+          <input type="text" autocomplete="username" name="username"
+                 id="key-username" value="openrouter-api-key"
+                 readonly tabindex="-1" class="vh" aria-hidden="true">
+          <div class="key-row">
+            <input type="password" id="key-input" name="password"
+                   autocomplete="current-password" placeholder="sk-or-v1-…">
+            <button type="submit" class="key-save-btn">Save</button>
+          </div>
+        </form>
+      </div>
       <p class="help">
         Partagée avec l'app « Record live ». Stockée localement (localStorage).
       </p>
@@ -112,7 +114,9 @@
 
     <div class="drawer-section">
       <h3>Langue</h3>
-      <select id="drawer-lang-select"></select>
+      <div class="api-key-block">
+        <select id="drawer-lang-select"></select>
+      </div>
       <p class="help">Partagée avec l'app « Record live ».</p>
     </div>
 

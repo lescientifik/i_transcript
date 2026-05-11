@@ -645,11 +645,31 @@ function wireVadToggle() {
   });
 }
 
-/* Settings button + close + backdrop + auto-open si aucune clé. */
+/* Settings button + close + backdrop + auto-open si aucune clé.
+ * Global keydown shortcut `,` toggles the drawer (parity with the main app).
+ * Ignored when focus is in an editable target (input/textarea/select/
+ * contenteditable) or when a modifier key is pressed. */
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
 function wireDrawer() {
   if (settingsBtn) settingsBtn.addEventListener('click', toggleDrawer);
   if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
   if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (isTypingTarget(e.target)) return;
+    if (e.key === ',') {
+      e.preventDefault();
+      toggleDrawer();
+    }
+  });
 }
 
 function maybeAutoOpenDrawer() {
