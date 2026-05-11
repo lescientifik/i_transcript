@@ -1,0 +1,14 @@
+{
+  "name": "i_transcript",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@playwright/cli": "^0.1.13",
+    "@types/bun": "latest",
+    "ts-morph": "^28.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
