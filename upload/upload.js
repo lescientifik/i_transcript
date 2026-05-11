@@ -1,4 +1,4 @@
-import { state } from '../src/shared/state.js';
+import { state, saveState } from '../src/shared/state.js';
 import { decodeTo16kMono, trimWithVAD } from '../src/shared/audio-codec.js';
 import { MODELS } from '../src/shared/models.js';
 import {
@@ -8,11 +8,14 @@ import {
 } from '../src/shared/openrouter.js';
 
 /* ============================================================ *
- * UPLOAD APP — steps 3.c + 3.d:
+ * UPLOAD APP — steps 3.c + 3.d + 3.e:
  *   3.c — transcription pipeline + breadcrumb + chrono + render
  *   3.d — localStorage persistence (sttbench.upload.v1) +
  *         hydratation au load + "Transcript précédent" label +
  *         download TXT + copier (avec toast feedback)
+ *   3.e — settings drawer : API key OpenRouter (shared sttbench.v1),
+ *         langue (shared, bidirectionnelle topbar↔drawer), VAD toggle
+ *         (séparé sttbench.upload.v1.vadEnabled) + warning amber
  * ============================================================ */
 
 const LANG_OPTIONS = [
@@ -46,6 +49,17 @@ const resultActions   = document.getElementById('result-actions');
 const btnDownload     = document.getElementById('btn-download');
 const btnCopy         = document.getElementById('btn-copy');
 const toastEl         = document.getElementById('toast');
+
+// Settings drawer DOM refs (step 3.e)
+const settingsBtn     = document.getElementById('settings-btn');
+const drawer          = document.getElementById('drawer');
+const drawerBackdrop  = document.getElementById('drawer-backdrop');
+const drawerClose     = document.getElementById('drawer-close');
+const keyForm         = document.getElementById('key-form');
+const keyInput        = document.getElementById('key-input');
+const drawerLangSelect = document.getElementById('drawer-lang-select');
+const vadCheckbox     = document.getElementById('vad-enabled');
+const vadWarning      = document.getElementById('vad-warning');
 
 // Module-scoped state
 let selectedFile = null;
@@ -522,12 +536,141 @@ function hydrateFromLastTranscript() {
   }
 }
 
+/* ---------- settings drawer (step 3.e) ---------- */
+
+function openDrawer() {
+  drawer.classList.add('open');
+  drawerBackdrop.classList.add('open');
+}
+
+function closeDrawer() {
+  drawer.classList.remove('open');
+  drawerBackdrop.classList.remove('open');
+}
+
+function toggleDrawer() {
+  if (drawer.classList.contains('open')) closeDrawer();
+  else openDrawer();
+}
+
+/* API key OpenRouter — partagée avec l'app principale via sttbench.v1.
+ * Lecture initiale, écriture en live à chaque input (trim) + via submit
+ * pour donner un feedback explicite (toast). Le bouton Transcribe est
+ * recalculé après save. */
+function hydrateApiKey() {
+  if (!keyInput) return;
+  keyInput.value = state.apiKeys?.openrouter || '';
+}
+
+function persistApiKey(rawValue) {
+  if (!state.apiKeys) state.apiKeys = {};
+  state.apiKeys.openrouter = (rawValue || '').trim();
+  saveState();
+  refreshTranscribeEnabled();
+}
+
+function wireApiKey() {
+  if (!keyInput) return;
+  // Live save : `input` couvre la frappe, `change` couvre l'autofill.
+  keyInput.addEventListener('input', () => persistApiKey(keyInput.value));
+  keyInput.addEventListener('change', () => persistApiKey(keyInput.value));
+  // Le form a un bouton Save explicite ; on l'intercepte pour éviter
+  // une navigation. La valeur est déjà saved via input/change, on ajoute
+  // juste un feedback toast.
+  if (keyForm) {
+    keyForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      persistApiKey(keyInput.value);
+      showToast(
+        state.apiKeys.openrouter ? 'Clé OpenRouter enregistrée' : 'Clé OpenRouter effacée',
+        state.apiKeys.openrouter ? 'success' : 'info'
+      );
+    });
+  }
+}
+
+/* Langue — un sélecteur en topbar (lang-select), un autre dans le drawer
+ * (drawer-lang-select). Source de vérité : state.lang (sttbench.v1).
+ * Synchronisation bidirectionnelle. */
+function populateDrawerLangSelect() {
+  if (!drawerLangSelect) return;
+  drawerLangSelect.innerHTML = '';
+  for (const { value, label } of LANG_OPTIONS) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    drawerLangSelect.appendChild(opt);
+  }
+  drawerLangSelect.value = state.lang ?? 'fr';
+}
+
+function syncLangFromValue(value) {
+  state.lang = value ?? 'fr';
+  saveState();
+  if (langSelect && langSelect.value !== state.lang) langSelect.value = state.lang;
+  if (drawerLangSelect && drawerLangSelect.value !== state.lang) drawerLangSelect.value = state.lang;
+  refreshTranscribeEnabled();
+}
+
+function wireLangSelectors() {
+  if (langSelect) {
+    langSelect.addEventListener('change', () => syncLangFromValue(langSelect.value));
+  }
+  if (drawerLangSelect) {
+    drawerLangSelect.addEventListener('change', () => syncLangFromValue(drawerLangSelect.value));
+  }
+}
+
+/* VAD toggle — séparé : sttbench.upload.v1.vadEnabled (cf. plan Q4).
+ * Default false. Warning amber visible UNIQUEMENT quand le toggle est on. */
+function refreshVadWarning() {
+  if (!vadWarning || !vadCheckbox) return;
+  vadWarning.hidden = !vadCheckbox.checked;
+}
+
+function hydrateVadToggle() {
+  if (!vadCheckbox) return;
+  const { vadEnabled } = loadUploadState();
+  vadCheckbox.checked = !!vadEnabled;
+  refreshVadWarning();
+}
+
+function wireVadToggle() {
+  if (!vadCheckbox) return;
+  vadCheckbox.addEventListener('change', () => {
+    const current = loadUploadState();
+    current.vadEnabled = !!vadCheckbox.checked;
+    saveUploadState(current);
+    refreshVadWarning();
+  });
+}
+
+/* Settings button + close + backdrop + auto-open si aucune clé. */
+function wireDrawer() {
+  if (settingsBtn) settingsBtn.addEventListener('click', toggleDrawer);
+  if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+  if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+}
+
+function maybeAutoOpenDrawer() {
+  const key = (state.apiKeys?.openrouter || '').trim();
+  if (!key) openDrawer();
+}
+
 /* ---------- init ---------- */
 
 function init() {
   populateModelSelect();
   populateLangSelect();
+  populateDrawerLangSelect();
   wireDropZone();
+  wireDrawer();
+  wireApiKey();
+  wireLangSelectors();
+  wireVadToggle();
+
+  hydrateApiKey();
+  hydrateVadToggle();
 
   btnTranscribe.addEventListener('click', onTranscribeClick);
   btnCancel.addEventListener('click', onCancelClick);
@@ -538,12 +681,10 @@ function init() {
     renderCostStrip();
     refreshTranscribeEnabled();
   });
-  langSelect.addEventListener('change', () => {
-    refreshTranscribeEnabled();
-  });
 
   hydrateFromLastTranscript();
   refreshTranscribeEnabled();
+  maybeAutoOpenDrawer();
 }
 
 init();
