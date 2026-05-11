@@ -888,12 +888,21 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return JSON.parse(JSON.stringify(DEFAULT_STATE));
     const parsed = JSON.parse(raw);
-    return {
+    const merged = {
       ...DEFAULT_STATE,
       ...parsed,
       apiKeys: { ...DEFAULT_STATE.apiKeys, ...(parsed.apiKeys || {}) },
       shortcuts: { ...DEFAULT_STATE.shortcuts, ...(parsed.shortcuts || {}) }
     };
+    // Heuristic cleanup: if Mistral key equals OpenRouter key (both non-empty),
+    // it's almost certainly a Chrome autofill leak into the wrong form. Clear it.
+    if (
+      merged.apiKeys.openrouter &&
+      merged.apiKeys.mistral === merged.apiKeys.openrouter
+    ) {
+      merged.apiKeys.mistral = '';
+    }
+    return merged;
   } catch (e) {
     console.warn('Failed to load state, using defaults', e);
     return JSON.parse(JSON.stringify(DEFAULT_STATE));
@@ -1854,17 +1863,6 @@ dom.settingsBtn.addEventListener('click', openDrawer);
 dom.drawerClose.addEventListener('click', closeDrawer);
 dom.drawerBackdrop.addEventListener('click', closeDrawer);
 
-dom.keyOR.addEventListener('input', (e) => {
-  state.apiKeys.openrouter = e.target.value.trim();
-  saveState();
-  refreshAvailabilityUI();
-});
-dom.keyMistral.addEventListener('input', (e) => {
-  state.apiKeys.mistral = e.target.value.trim();
-  saveState();
-  refreshAvailabilityUI();
-});
-
 /* API key form submission — triggers Chrome Password Manager "Save?" prompt.
    Chrome needs: visible-then-hidden form + a pushState signal to detect submission
    on a static page without real navigation. */
@@ -1875,6 +1873,7 @@ function setKeySavedView(provider, isSaved) {
   saved.hidden = !isSaved;
 }
 function handleKeyFormSubmit(provider, form, input) {
+  const label = provider === 'openrouter' ? 'OpenRouter' : 'Mistral';
   return (e) => {
     e.preventDefault();
     const value = input.value.trim();
@@ -1885,7 +1884,9 @@ function handleKeyFormSubmit(provider, form, input) {
       // Signal to Chrome that submission succeeded: navigation + form hidden.
       history.pushState({}, '', location.pathname);
       setKeySavedView(provider, true);
-      showToast(`${provider === 'openrouter' ? 'OpenRouter' : 'Mistral'} key saved`, 'success');
+      showToast(`${label} key saved`, 'success');
+    } else {
+      showToast(`${label} key cleared`, 'info');
     }
   };
 }
