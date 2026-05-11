@@ -398,6 +398,34 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .drawer-section textarea { font-family: var(--sans); min-height: 60px; resize: vertical; }
 
+/* API key form (Chrome Password Manager-friendly):
+   hidden username field must remain in layout (not display:none) for Chrome to detect the form. */
+input.vh {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  border: 0 !important;
+}
+.api-key-form { margin-bottom: 14px; }
+.api-key-form .key-row { display: flex; gap: 8px; align-items: stretch; }
+.api-key-form .key-row input[type="password"] { flex: 1; min-width: 0; }
+.api-key-form .key-save-btn,
+.api-key-form .key-edit-btn {
+  background: var(--bg-3); border: 1px solid var(--border);
+  color: var(--text); padding: 0 14px; border-radius: 7px;
+  font-size: 13px; cursor: pointer; font-family: var(--sans);
+}
+.api-key-form .key-save-btn:hover,
+.api-key-form .key-edit-btn:hover { border-color: var(--border-2); }
+.api-key-form .key-saved {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 8px 8px 12px; font-size: 13px;
+  color: var(--text-2);
+}
+
 /* model selection list */
 .model-list { display: flex; flex-direction: column; gap: 6px; }
 .model-item {
@@ -570,16 +598,45 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
     <div class="drawer-section">
       <h3>API Keys</h3>
-      <div style="margin-bottom: 14px">
-        <label style="font-size: 12.5px; color: var(--text-2); display: block; margin-bottom: 6px">OpenRouter API Key</label>
-        <input type="password" id="key-openrouter" placeholder="sk-or-v1-…" autocomplete="off">
+
+      <div class="api-key-block" style="margin-bottom: 14px">
+        <label for="key-openrouter" style="font-size: 12.5px; color: var(--text-2); display: block; margin-bottom: 6px">OpenRouter API Key</label>
+        <form method="post" action="#" class="api-key-form" id="form-openrouter" data-provider="openrouter">
+          <input type="text" autocomplete="username" name="username"
+                 id="username-openrouter" value="openrouter-api-key"
+                 readonly tabindex="-1" class="vh" aria-hidden="true">
+          <div class="key-row">
+            <input type="password" id="key-openrouter" name="password"
+                   autocomplete="current-password" placeholder="sk-or-v1-…">
+            <button type="submit" class="key-save-btn">Save</button>
+          </div>
+        </form>
+        <div class="key-saved" id="key-saved-openrouter" hidden>
+          <span>✓ OpenRouter key saved</span>
+          <button type="button" class="key-edit-btn" data-provider="openrouter">Edit</button>
+        </div>
       </div>
-      <div>
-        <label style="font-size: 12.5px; color: var(--text-2); display: block; margin-bottom: 6px">Mistral API Key</label>
-        <input type="password" id="key-mistral" placeholder="…" autocomplete="off">
+
+      <div class="api-key-block">
+        <label for="key-mistral" style="font-size: 12.5px; color: var(--text-2); display: block; margin-bottom: 6px">Mistral API Key</label>
+        <form method="post" action="#" class="api-key-form" id="form-mistral" data-provider="mistral">
+          <input type="text" autocomplete="username" name="username"
+                 id="username-mistral" value="mistral-api-key"
+                 readonly tabindex="-1" class="vh" aria-hidden="true">
+          <div class="key-row">
+            <input type="password" id="key-mistral" name="password"
+                   autocomplete="current-password" placeholder="…">
+            <button type="submit" class="key-save-btn">Save</button>
+          </div>
+        </form>
+        <div class="key-saved" id="key-saved-mistral" hidden>
+          <span>✓ Mistral key saved</span>
+          <button type="button" class="key-edit-btn" data-provider="mistral">Edit</button>
+        </div>
       </div>
+
       <p class="help">
-        Stored locally in your browser (localStorage). Never sent anywhere except to the corresponding APIs.
+        Stored locally in your browser (localStorage) and offered to Chrome Password Manager for cross-device sync. Never sent anywhere except to the corresponding APIs.
       </p>
     </div>
 
@@ -871,6 +928,10 @@ const dom = {
   settingsBtn: $('settings-btn'),
   keyOR: $('key-openrouter'),
   keyMistral: $('key-mistral'),
+  formOR: $('form-openrouter'),
+  formMistral: $('form-mistral'),
+  keySavedOR: $('key-saved-openrouter'),
+  keySavedMistral: $('key-saved-mistral'),
   modelList: $('model-list'),
   defaultPrompt: $('default-prompt'),
   autoRunCopy: $('auto-run-copy'),
@@ -1606,6 +1667,8 @@ function openDrawer() {
   dom.drawer.classList.add('open');
   dom.keyOR.value = state.apiKeys.openrouter;
   dom.keyMistral.value = state.apiKeys.mistral;
+  setKeySavedView('openrouter', !!state.apiKeys.openrouter);
+  setKeySavedView('mistral', !!state.apiKeys.mistral);
   dom.defaultPrompt.value = state.defaultPrompt;
   dom.autoRunCopy.checked = !!state.autoRunCopy;
   dom.vadEnabled.checked = !!state.vadEnabled;
@@ -1800,6 +1863,43 @@ dom.keyMistral.addEventListener('input', (e) => {
   state.apiKeys.mistral = e.target.value.trim();
   saveState();
   refreshAvailabilityUI();
+});
+
+/* API key form submission — triggers Chrome Password Manager "Save?" prompt.
+   Chrome needs: visible-then-hidden form + a pushState signal to detect submission
+   on a static page without real navigation. */
+function setKeySavedView(provider, isSaved) {
+  const form = provider === 'openrouter' ? dom.formOR : dom.formMistral;
+  const saved = provider === 'openrouter' ? dom.keySavedOR : dom.keySavedMistral;
+  form.style.display = isSaved ? 'none' : '';
+  saved.hidden = !isSaved;
+}
+function handleKeyFormSubmit(provider, form, input) {
+  return (e) => {
+    e.preventDefault();
+    const value = input.value.trim();
+    state.apiKeys[provider] = value;
+    saveState();
+    refreshAvailabilityUI();
+    if (value) {
+      // Signal to Chrome that submission succeeded: navigation + form hidden.
+      history.pushState({}, '', location.pathname);
+      setKeySavedView(provider, true);
+      showToast(`${provider === 'openrouter' ? 'OpenRouter' : 'Mistral'} key saved`, 'success');
+    }
+  };
+}
+dom.formOR.addEventListener('submit', handleKeyFormSubmit('openrouter', dom.formOR, dom.keyOR));
+dom.formMistral.addEventListener('submit', handleKeyFormSubmit('mistral', dom.formMistral, dom.keyMistral));
+
+document.querySelectorAll('.key-edit-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const provider = btn.dataset.provider;
+    setKeySavedView(provider, false);
+    const input = provider === 'openrouter' ? dom.keyOR : dom.keyMistral;
+    input.focus();
+    input.select();
+  });
 });
 
 function refreshAvailabilityUI() {
