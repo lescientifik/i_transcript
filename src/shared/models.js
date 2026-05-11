@@ -1,4 +1,3 @@
-import { cachedResults, currentAudioId } from '../audio.js';
 import { state } from './state.js';
 
 /* ============================================================ *
@@ -113,22 +112,5 @@ export const MODELS = [
 export function isModelAvailable(model) {
   if (!model) return false;
   return !!(state.apiKeys[model.requiredKey] || '').trim();
-}
-
-function getAvailableSelectedModels() {
-  return state.selectedModelIds
-    .map(id => MODELS.find(m => m.id === id))
-    .filter(m => m && isModelAvailable(m));
-}
-
-// True if model already has a successful transcript for the current audio.
-export function hasFreshSuccess(modelId) {
-  const r = cachedResults[modelId];
-  return !!(r && r.audioId === currentAudioId && r.text != null);
-}
-
-// Models that still need to be transcribed for the current audio.
-export function getModelsToRun() {
-  return getAvailableSelectedModels().filter(m => !hasFreshSuccess(m.id));
 }
 

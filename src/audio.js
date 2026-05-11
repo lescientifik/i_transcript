@@ -1,4 +1,4 @@
-import { getModelsToRun } from './shared/models.js';
+import { MODELS, isModelAvailable } from './shared/models.js';
 import { state } from './shared/state.js';
 import { refreshCostStrip, runTranscriptions } from './transcription.js';
 import { dom, renderResultsLayout, showToast } from './ui.js';
@@ -21,6 +21,19 @@ export let currentAudioId = null;
 export const cachedResults = {}; // modelId -> { audioId, text?, costUsd?, durationSec?, error? }
 // Original (pre-VAD) duration so we can show "X → Y" savings in the UI.
 let originalDurationSec = 0;
+
+// True if model already has a successful transcript for the current audio.
+export function hasFreshSuccess(modelId) {
+  const r = cachedResults[modelId];
+  return !!(r && r.audioId === currentAudioId && r.text != null);
+}
+
+// Models that still need to be transcribed for the current audio.
+export function getModelsToRun() {
+  return state.selectedModelIds
+    .map(id => MODELS.find(m => m.id === id))
+    .filter(m => m && isModelAvailable(m) && !hasFreshSuccess(m.id));
+}
 
 export async function startRecording() {
   if (isRecording) return;
