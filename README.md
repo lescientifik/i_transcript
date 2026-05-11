@@ -35,10 +35,6 @@ sous une seule clé.
 6. Dans l'app, ouvrir les paramètres (touche `,`), section **API Keys**, sélectionner
    le provider **OpenRouter**, coller la clé, **Save**.
 
-À titre indicatif, Whisper Large V3 Turbo tourne autour de 0,04 $/heure d'audio et
-GPT-4o Mini Transcribe autour de 0,003 $/minute. Quelques euros couvrent plusieurs
-heures.
-
 ### Mistral (optionnel)
 
 Pour appeler Voxtral via l'API Mistral directe au lieu d'OpenRouter :
