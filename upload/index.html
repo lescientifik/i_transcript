@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STT·Bench — Upload &amp; transcribe</title>
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    STT<span class="dot">·</span>Bench
+    <small>upload &amp; transcribe</small>
+  </div>
+  <a href="../" class="topbar-link" id="link-record-live">← Record live</a>
+  <div class="topbar-spacer"></div>
+  <button id="settings-btn" class="icon-btn" title="Paramètres">
+    settings <span class="kbd">,</span>
+  </button>
+</div>
+
+<div class="main upload-main">
+
+  <div class="upload-card">
+
+    <div class="upload-dropzone" id="drop-zone" data-role="drop-zone" tabindex="0" role="button" aria-label="Glisser-déposer un fichier audio">
+      <div class="upload-dropzone-icon" aria-hidden="true">⤓</div>
+      <div class="upload-dropzone-title">Glisser-déposer un fichier audio</div>
+      <div class="upload-dropzone-hint">ou cliquer pour sélectionner — wav, mp3, flac, m4a, mp4, ogg, opus, webm, aac</div>
+      <input type="file" id="file-input" class="upload-file-input"
+             accept=".wav,.mp3,.flac,.m4a,.mp4,.ogg,.oga,.opus,.webm,.aac">
+    </div>
+
+    <div class="upload-controls">
+      <div class="upload-field">
+        <label for="model-select">Modèle</label>
+        <select id="model-select"></select>
+      </div>
+      <div class="upload-field">
+        <label for="lang-select">Langue</label>
+        <select id="lang-select"></select>
+      </div>
+    </div>
+
+    <div class="upload-cost-strip" id="cost-strip" data-role="cost-strip" hidden></div>
+
+    <div class="upload-breadcrumb" id="phase-breadcrumb" data-role="breadcrumb" hidden>
+      <span class="upload-step" data-phase="encoding">Encoding</span>
+      <span class="upload-step-sep">→</span>
+      <span class="upload-step" data-phase="uploading">Uploading</span>
+      <span class="upload-step-sep">→</span>
+      <span class="upload-step" data-phase="transcribing">Transcribing</span>
+    </div>
+
+    <div class="upload-chrono" id="chrono" data-role="chrono" hidden>0:00</div>
+
+    <div class="upload-actions">
+      <button id="btn-transcribe" class="send-btn upload-btn-transcribe"
+              data-action="transcribe" disabled>
+        Transcrire
+      </button>
+      <button id="btn-cancel" class="icon-btn upload-btn-cancel"
+              data-action="cancel" hidden>
+        Annuler
+      </button>
+    </div>
+
+    <div class="upload-error" id="error-banner" data-role="error" hidden></div>
+
+    <div class="upload-transcript-label" id="transcript-label"
+         data-role="transcript-label" hidden></div>
+
+    <pre id="transcript-output" class="upload-transcript-pre"
+         data-role="transcript" tabindex="0"></pre>
+
+    <div class="upload-result-actions" id="result-actions" hidden>
+      <button id="btn-download" class="send-btn upload-btn-download"
+              data-action="download">Télécharger TXT</button>
+      <button id="btn-copy" class="icon-btn upload-btn-copy"
+              data-action="copy">Copier</button>
+    </div>
+
+  </div>
+
+</div>
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div class="drawer-title">Settings</div>
+    <button class="close-btn" id="drawer-close" aria-label="Fermer">×</button>
+  </div>
+  <div class="drawer-body">
+
+    <div class="drawer-section">
+      <h3>API Key — OpenRouter</h3>
+      <form method="post" action="#" class="api-key-form" id="key-form">
+        <input type="text" autocomplete="username" name="username"
+               id="key-username" value="openrouter-api-key"
+               readonly tabindex="-1" class="vh" aria-hidden="true">
+        <div class="key-row">
+          <input type="password" id="key-input" name="password"
+                 autocomplete="current-password" placeholder="sk-or-v1-…">
+          <button type="submit" class="key-save-btn">Save</button>
+        </div>
+      </form>
+      <p class="help">
+        Partagée avec l'app « Record live ». Stockée localement (localStorage).
+      </p>
+    </div>
+
+    <div class="drawer-section">
+      <h3>Langue</h3>
+      <select id="drawer-lang-select"></select>
+      <p class="help">Partagée avec l'app « Record live ».</p>
+    </div>
+
+    <div class="drawer-section">
+      <h3>Silence trimming (Silero VAD)</h3>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+        <input type="checkbox" id="vad-enabled">
+        <span>Trim silences avant envoi (re-encode WAV 16 kHz mono)</span>
+      </label>
+      <div class="upload-warning" id="vad-warning" hidden>
+        ⚠️ Le VAD re-encode le fichier en WAV 16 kHz mono. Un mp3 peut grossir 3–5×.
+        À activer uniquement sur audio long avec beaucoup de silences (dictaphone, mémo réunion).
+      </div>
+    </div>
+
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="./upload.js"></script>
+</body>
+</html>

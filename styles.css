@@ -532,3 +532,215 @@ input.vh {
 .toast.error { border-color: var(--bad); color: var(--bad); }
 .toast.success { border-color: var(--good); color: var(--good); }
 
+/* === UPLOAD APP === */
+
+/* `display:flex` on upload-* classes wins over the default `[hidden]` UA rule,
+   so we re-assert it once for the whole upload module. */
+.upload-card [hidden] { display: none !important; }
+
+.topbar-link {
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 12.5px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  transition: all 120ms ease;
+}
+.topbar-link:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--bg-3);
+}
+
+.upload-main { max-width: 900px; }
+
+.upload-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.upload-dropzone {
+  position: relative;
+  border: 2px dashed var(--border-2);
+  border-radius: 12px;
+  background: var(--bg-3);
+  padding: 36px 22px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.upload-dropzone:hover,
+.upload-dropzone:focus-visible {
+  border-color: var(--accent);
+  background: rgba(255, 90, 61, 0.04);
+  outline: none;
+}
+.upload-dropzone.dragover {
+  border-color: var(--accent);
+  background: rgba(255, 90, 61, 0.10);
+  border-style: solid;
+}
+.upload-dropzone-icon {
+  font-size: 32px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.upload-dropzone-title {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--text);
+}
+.upload-dropzone-hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.upload-file-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.upload-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .upload-controls { grid-template-columns: 1fr; }
+}
+.upload-field { display: flex; flex-direction: column; gap: 5px; }
+.upload-field label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.upload-field select {
+  height: 40px;
+  padding: 0 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 13px;
+}
+.upload-field select:focus {
+  outline: none;
+  border-color: var(--border-2);
+}
+
+.upload-cost-strip {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.upload-cost-strip b { color: var(--accent-2); font-weight: 600; }
+
+.upload-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.upload-step { color: var(--text-3); }
+.upload-step.active { color: var(--accent); font-weight: 700; }
+.upload-step.done { color: var(--good); }
+.upload-step-sep { color: var(--text-3); }
+
+.upload-chrono {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.upload-btn-transcribe { flex: 1; max-width: 240px; }
+
+.upload-error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.upload-transcript-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent-2);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.upload-transcript-pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-height: 120px;
+  max-height: 480px;
+  overflow-y: auto;
+  font-family: var(--serif);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.upload-transcript-pre:empty::before {
+  content: "— Aucun transcript pour le moment —";
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.upload-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.upload-btn-download { max-width: 220px; }
+
+.upload-warning {
+  margin-top: 10px;
+  background: rgba(255, 181, 71, 0.10);
+  border: 1px solid var(--accent-2);
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--accent-2);
+  line-height: 1.5;
+}
+
