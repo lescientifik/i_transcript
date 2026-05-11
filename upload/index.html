@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -15,7 +15,7 @@
   </div>
   <a href="../" class="topbar-link" id="link-record-live">← Record live</a>
   <div class="topbar-spacer"></div>
-  <button id="settings-btn" class="icon-btn" title="Paramètres">
+  <button id="settings-btn" class="icon-btn" title="Settings">
     settings <span class="kbd">,</span>
   </button>
 </div>
@@ -24,21 +24,21 @@
 
   <div class="upload-card">
 
-    <div class="upload-dropzone" id="drop-zone" data-role="drop-zone" tabindex="0" role="button" aria-label="Glisser-déposer un fichier audio">
+    <div class="upload-dropzone" id="drop-zone" data-role="drop-zone" tabindex="0" role="button" aria-label="Drag and drop an audio file">
       <div class="upload-dropzone-icon" aria-hidden="true">⤓</div>
-      <div class="upload-dropzone-title">Glisser-déposer un fichier audio</div>
-      <div class="upload-dropzone-hint">ou cliquer pour sélectionner — wav, mp3, flac, m4a, mp4, ogg, opus, webm, aac</div>
+      <div class="upload-dropzone-title">Drag and drop an audio file</div>
+      <div class="upload-dropzone-hint">or click to pick one — wav, mp3, flac, m4a, mp4, ogg, opus, webm, aac</div>
       <input type="file" id="file-input" class="upload-file-input"
              accept=".wav,.mp3,.flac,.m4a,.mp4,.ogg,.oga,.opus,.webm,.aac">
     </div>
 
     <div class="upload-controls">
       <div class="upload-field">
-        <label for="model-select">Modèle</label>
+        <label for="model-select">Model</label>
         <select id="model-select"></select>
       </div>
       <div class="upload-field">
-        <label for="lang-select">Langue</label>
+        <label for="lang-select">Language</label>
         <select id="lang-select"></select>
       </div>
     </div>
@@ -58,11 +58,11 @@
     <div class="upload-actions">
       <button id="btn-transcribe" class="send-btn upload-btn-transcribe"
               data-action="transcribe" disabled>
-        Transcrire
+        Transcribe
       </button>
       <button id="btn-cancel" class="icon-btn upload-btn-cancel"
               data-action="cancel" hidden>
-        Annuler
+        Cancel
       </button>
     </div>
 
@@ -76,9 +76,9 @@
 
     <div class="upload-result-actions" id="result-actions" hidden>
       <button id="btn-download" class="send-btn upload-btn-download"
-              data-action="download">Télécharger TXT</button>
+              data-action="download">Download TXT</button>
       <button id="btn-copy" class="icon-btn upload-btn-copy"
-              data-action="copy">Copier</button>
+              data-action="copy">Copy</button>
     </div>
 
   </div>
@@ -89,7 +89,7 @@
 <aside class="drawer" id="drawer">
   <div class="drawer-head">
     <div class="drawer-title">Settings</div>
-    <button class="close-btn" id="drawer-close" aria-label="Fermer">×</button>
+    <button class="close-btn" id="drawer-close" aria-label="Close">×</button>
   </div>
   <div class="drawer-body">
 
@@ -108,27 +108,27 @@
         </form>
       </div>
       <p class="help">
-        Partagée avec l'app « Record live ». Stockée localement (localStorage).
+        Shared with the “Record live” app. Stored locally (localStorage).
       </p>
     </div>
 
     <div class="drawer-section">
-      <h3>Langue</h3>
+      <h3>Language</h3>
       <div class="api-key-block">
         <select id="drawer-lang-select"></select>
       </div>
-      <p class="help">Partagée avec l'app « Record live ».</p>
+      <p class="help">Shared with the “Record live” app.</p>
     </div>
 
     <div class="drawer-section">
       <h3>Silence trimming (Silero VAD)</h3>
       <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
         <input type="checkbox" id="vad-enabled">
-        <span>Trim silences avant envoi (re-encode WAV 16 kHz mono)</span>
+        <span>Trim silences before sending (re-encodes to WAV 16 kHz mono)</span>
       </label>
       <div class="upload-warning" id="vad-warning" hidden>
-        ⚠️ Le VAD re-encode le fichier en WAV 16 kHz mono. Un mp3 peut grossir 3–5×.
-        À activer uniquement sur audio long avec beaucoup de silences (dictaphone, mémo réunion).
+        ⚠️ VAD re-encodes the file to WAV 16 kHz mono. An mp3 can grow 3–5×.
+        Enable only on long audio with lots of silences (dictaphone, meeting memo).
       </div>
     </div>
 

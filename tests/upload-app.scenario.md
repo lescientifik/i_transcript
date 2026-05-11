@@ -71,11 +71,11 @@ playwright-cli -s=s1 screenshot --filename=screenshots/s1-load.png
    # → non-vide, non "404"
    ```
 2. Le snapshot contient les 5 éléments suivants (texte / role) :
-   - une zone "drop" ou "Glisser" ou label équivalent (drop-zone) — élément avec classe `upload-drop-zone` ou role `region` étiqueté Drop
-   - un `select` modèle (label : Modèle / Model)
-   - un `select` langue (label : Langue / Lang)
-   - un bouton settings (titre / aria-label contenant "Paramètres" ou "Settings", visuellement engrenage)
-   - un bouton **Transcribe** (texte visible "Transcrire" ou "Transcribe")
+   - une zone "drop" ou "Drag and drop" ou label équivalent (drop-zone) — élément avec classe `upload-drop-zone` ou role `region` étiqueté Drop
+   - un `select` modèle (label : Model)
+   - un `select` langue (label : Language)
+   - un bouton settings (titre / aria-label contenant "Settings", visuellement engrenage)
+   - un bouton **Transcribe** (texte visible "Transcribe")
 3. `playwright-cli -s=s1 console` retourne 0 ligne d'erreur (filtre `console error|level: error`). Warnings autorisés.
 4. Aucune requête 404 sur `.js` / `.css` (`playwright-cli -s=s1 requests` → toutes status 200, à part éventuels favicons).
 
@@ -237,7 +237,7 @@ playwright-cli -s=s4 console
 
 1. Encart erreur visible et contient un texte d'erreur reconnaissable :
    ```bash
-   playwright-cli -s=s4 --raw eval "const e=document.querySelector('[data-role=error], .upload-error, .error-banner'); !!e && e.offsetParent!==null && /401|Invalid|erreur|error/i.test(e.textContent)"
+   playwright-cli -s=s4 --raw eval "const e=document.querySelector('[data-role=error], .upload-error, .error-banner'); !!e && e.offsetParent!==null && /401|Invalid|error/i.test(e.textContent)"
    # → "true"
    ```
 2. `<pre>` résultat **vide** OU contient encore le précédent (ici aucun, donc vide) :
@@ -476,9 +476,9 @@ playwright-cli -s=s8 screenshot --filename=screenshots/s8-previous-label.png
    playwright-cli -s=s8 --raw eval "document.querySelector('pre[data-role=transcript], .upload-transcript-pre').textContent.includes('previous transcript content')"
    # → "true"
    ```
-2. Un label "Transcript précédent" ou "Previous transcript" mentionnant `previous.wav` est visible :
+2. Un label "Previous transcript" mentionnant `previous.wav` est visible :
    ```bash
-   playwright-cli -s=s8 --raw eval "/(Transcript précédent|Previous transcript)[^<]*previous\\.wav/i.test(document.body.textContent) || /previous\\.wav/i.test(document.querySelector('[data-role=transcript-label], .upload-transcript-label')?.textContent || '')"
+   playwright-cli -s=s8 --raw eval "/Previous transcript[^<]*previous\\.wav/i.test(document.body.textContent) || /previous\\.wav/i.test(document.querySelector('[data-role=transcript-label], .upload-transcript-label')?.textContent || '')"
    # → "true"
    ```
 3. `localStorage.sttbench.upload.v1.lastTranscript.text` n'a PAS changé (pas de transcription tentée) :

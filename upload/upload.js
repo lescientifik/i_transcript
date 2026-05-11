@@ -19,7 +19,7 @@ import {
  * ============================================================ */
 
 const LANG_OPTIONS = [
-  { value: 'fr', label: 'Français (par défaut)' },
+  { value: 'fr', label: 'Français (default)' },
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Español' },
   { value: 'de', label: 'Deutsch' },
@@ -183,11 +183,11 @@ function showToast(msg, kind = 'info') {
   toastHandle = setTimeout(() => { toastEl.classList.remove('show'); }, 1500);
 }
 
-/* ---------- "Transcript précédent (<sourceName>)" label ---------- */
+/* ---------- "Previous transcript (<sourceName>)" label ---------- */
 
 function showPreviousLabel(sourceName) {
   if (!transcriptLabel) return;
-  transcriptLabel.textContent = `Transcript précédent (${sourceName})`;
+  transcriptLabel.textContent = `Previous transcript (${sourceName})`;
   transcriptLabel.hidden = false;
 }
 
@@ -221,7 +221,7 @@ function renderCostStrip() {
   }
   const cost = estimateCost(model, selectedDurationSec);
   costStrip.textContent =
-    `Coût estimé : ${fmtCost4(cost)} (${fmtDuration(selectedDurationSec)} · ${model.priceLabel})`;
+    `Estimated cost: ${fmtCost4(cost)} (${fmtDuration(selectedDurationSec)} · ${model.priceLabel})`;
   costStrip.hidden = false;
 }
 
@@ -237,7 +237,7 @@ async function onFileSelected(file) {
     selectedDurationSec = 0;
     costStrip.hidden = true;
     const exts = Object.keys(EXTENSION_TO_FORMAT).join('/');
-    showError(`Format non supporté (${exts} uniquement)`);
+    showError(`Unsupported format (${exts} only)`);
     refreshTranscribeEnabled();
     return;
   }
@@ -261,7 +261,7 @@ async function onFileSelected(file) {
     selectedFile = null;
     selectedDurationSec = 0;
     costStrip.hidden = true;
-    showError(`Impossible de décoder ce fichier audio: ${err.message || err}`);
+    showError(`Could not decode this audio file: ${err.message || err}`);
     refreshTranscribeEnabled();
     return;
   }
@@ -406,13 +406,13 @@ async function onTranscribeClick() {
     }
 
     if (!format) {
-      throw new Error('Format non supporté');
+      throw new Error('Unsupported format');
     }
     if (blob.size > MAX_BYTES) {
       const mb = (blob.size / (1024 * 1024)).toFixed(1);
       const msg = vadOn
-        ? `Fichier post-VAD > 18 MB (${mb} MB, limite OpenAI/OpenRouter). Désactivez le VAD ou utilisez un extrait plus court.`
-        : `Fichier > 18 MB (${mb} MB).`;
+        ? `Post-VAD file > 18 MB (${mb} MB, OpenAI/OpenRouter limit). Disable VAD or use a shorter excerpt.`
+        : `File > 18 MB (${mb} MB).`;
       throw new Error(msg);
     }
 
@@ -452,8 +452,8 @@ async function onTranscribeClick() {
     const isAbort = err?.name === 'AbortError'
       || /aborted/i.test(err?.message || '');
     const msg = isAbort
-      ? 'Transcription annulée.'
-      : `Erreur de transcription : ${err?.message || err}`;
+      ? 'Transcription cancelled.'
+      : `Transcription error: ${err?.message || err}`;
     showError(msg);
   } finally {
     abortCtrl = null;
@@ -489,7 +489,7 @@ function basenameToTxt(sourceName) {
 function onDownloadClick() {
   const text = currentTranscriptText();
   if (!text) {
-    showToast('Aucun transcript à télécharger', 'error');
+    showToast('No transcript to download', 'error');
     return;
   }
   const filename = basenameToTxt(currentSourceName());
@@ -513,14 +513,14 @@ function onDownloadClick() {
 async function onCopyClick() {
   const text = currentTranscriptText();
   if (!text) {
-    showToast('Aucun transcript à copier', 'error');
+    showToast('No transcript to copy', 'error');
     return;
   }
   try {
     await navigator.clipboard.writeText(text);
-    showToast('Copié ✓', 'success');
+    showToast('Copied ✓', 'success');
   } catch (err) {
-    showToast('Copie échouée : ' + (err?.message || err), 'error');
+    showToast('Copy failed: ' + (err?.message || err), 'error');
   }
 }
 
@@ -582,7 +582,7 @@ function wireApiKey() {
       e.preventDefault();
       persistApiKey(keyInput.value);
       showToast(
-        state.apiKeys.openrouter ? 'Clé OpenRouter enregistrée' : 'Clé OpenRouter effacée',
+        state.apiKeys.openrouter ? 'OpenRouter key saved' : 'OpenRouter key cleared',
         state.apiKeys.openrouter ? 'success' : 'info'
       );
     });
